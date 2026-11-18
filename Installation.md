@@ -38,4 +38,12 @@ This is a step-by-step installation guide for the metrology module. **Current st
 
 ## 5. Upgrade, recovery and verification
 
+To update the **test** processor to the current METEOR-core `main`, from this repository run:
+
+```powershell
+python scripts/update_test_meteor_core.py
+```
+
+The command resolves `main` to an exact commit, builds the processor through the existing `metrology-processor` binary BuildConfig in `core-omero-test`, and patches the CronJob to the resulting immutable image digest only after the build succeeds. It does not start a job or contact OMERO. Each run records the exact METEOR-core revision in its `analysis_version`; previously completed filesets are skipped rather than reanalyzed. Existing running Jobs keep their original image. This is an **on-demand update**, not automatic tracking: run it again when another core update is wanted. It requires authenticated `oc`, `git`, network access and permission to build and patch in the test namespace. Review and test new core changes before relying on them; an image build alone does not verify analysis compatibility. Keep the previous CronJob digest for rollback. The checked-in test manifest is a baseline snapshot: applying it after an update can restore its older digest.
+
 Review backups and schema ownership before each ordered upgrade; apply the upgrade once as the setup identity, update grants for new objects, deploy compatible images, and test login, permissions, pages, processing and attachment reconciliation. Rollback must follow the specific release's documented procedure; disabling the module must not delete data. Cross-system writes need recovery because PostgreSQL and OMERO do not share transactions. Reconcile pending runs and artifacts after interrupted jobs. Never log passwords or tokens.

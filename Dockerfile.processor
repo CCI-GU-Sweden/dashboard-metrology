@@ -1,11 +1,12 @@
 # OMERO server image supplies the matching Ice/OMERO Python runtime.
 FROM registry.k8s.gu.se/core-omero-test/omero-server:1.8
 USER 0
+ARG METEOR_CORE_REF=3de0672afc60199a6fca7be79fb041b730114e47
 RUN /opt/omero/server/venv3/bin/pip install --no-cache-dir \
     'psycopg[binary]==3.3.8' \
-    'METEOR-core @ https://github.com/CCI-GU-Sweden/METEOR-core/archive/3de0672afc60199a6fca7be79fb041b730114e47.tar.gz'
+    "METEOR-core @ https://github.com/CCI-GU-Sweden/METEOR-core/archive/${METEOR_CORE_REF}.tar.gz"
 WORKDIR /app
 COPY metrology_processor /app/metrology_processor
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg HOME=/tmp OMERO_USERDIR=/tmp/omero
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg HOME=/tmp OMERO_USERDIR=/tmp/omero METEOR_CORE_REVISION=${METEOR_CORE_REF}
 USER 10001
 ENTRYPOINT ["/opt/omero/server/venv3/bin/python", "-m", "metrology_processor.worker"]

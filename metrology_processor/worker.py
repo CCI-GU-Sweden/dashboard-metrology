@@ -15,7 +15,7 @@ from .omero_io import attach, connect, filesets
 from .metadata import positive_number
 
 LOG = logging.getLogger(__name__)
-VERSION = "meteor-core-3de0672afc60199a6fca7be79fb041b730114e47"
+VERSION = "meteor-core-" + os.getenv("METEOR_CORE_REVISION", "3de0672afc60199a6fca7be79fb041b730114e47")
 CONFIG = "v1"
 
 
