@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: metrology-processor
+  namespace: core-omero-test
+spec:
+  schedule: '0 16 * * *'
+  timeZone: Europe/Berlin
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: processor
+              image: REPLACE_WITH_VERIFIED_IMAGE_DIGEST
+              args: ['--limit', '10']
+              envFrom:
+                - secretRef: {name: dashboard-metrology-omero}
+                - secretRef: {name: dashboard-metrology-db}
+              env:
+                - {name: OMERO_HOST, value: omero}
+                - {name: OMERO_SOURCE, value: core-omero-test}
+                - {name: PGHOST, value: filestatistics-pg15}
+                - {name: PGDATABASE, value: omerofilestats}
+                - {name: METROLOGY_MAX_IMAGE_BYTES, value: '1073741824'}
+              resources:
+                requests: {cpu: '500m', memory: 2Gi}
+                limits: {cpu: '2', memory: 8Gi}

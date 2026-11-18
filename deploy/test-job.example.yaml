@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: metrology-processor-batch-test
+  namespace: core-omero-test
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: processor
+          image: image-registry.openshift-image-registry.svc:5000/core-omero-test/metrology-processor:latest
+          imagePullPolicy: Always
+          args: ['--limit', '10']
+          envFrom:
+            - secretRef: {name: dashboard-metrology-omero}
+            - secretRef: {name: dashboard-metrology-db}
+          env:
+            - {name: OMERO_HOST, value: omero}
+            - {name: OMERO_SOURCE, value: core-omero-test}
+            - {name: PGHOST, value: filestatistics-pg15}
+            - {name: PGDATABASE, value: omerofilestats}
+            - {name: METROLOGY_MAX_IMAGE_BYTES, value: '1073741824'}
+          resources:
+            requests: {cpu: '500m', memory: 2Gi}
+            limits: {cpu: '2', memory: 8Gi}
