@@ -21,8 +21,11 @@ class UpdateTests(unittest.TestCase):
             if args[0] == "git":
                 return revision + "\trefs/heads/main"
             if "start-build" in args:
-                self.assertIn("--build-arg=METEOR_CORE_REF=" + revision, args)
+                context = Path(next(arg.split('=', 1)[1] for arg in args if arg.startswith('--from-dir=')))
+                self.assertIn('ARG METEOR_CORE_REF=' + revision, (context / 'Dockerfile').read_text())
                 return "build.build.openshift.io/metrology-processor-5"
+            if "logs" in args:
+                return f"Verified METEOR-core source: https://github.com/CCI-GU-Sweden/METEOR-core/archive/{revision}.tar.gz"
             if "get" in args:
                 return json.dumps({"status": {"phase": "Complete", "output": {"to": {"imageDigest": digest}}}})
             return "patched"
@@ -48,6 +51,18 @@ class UpdateTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 update.main()
         self.assertFalse(any("patch" in call for call in calls))
+
+    def test_missing_revision_verification_does_not_patch(self):
+        calls = []
+        def fake_run(args):
+            calls.append(args)
+            if args[0] == 'git': return 'a' * 40 + '\trefs/heads/main'
+            if 'start-build' in args: return 'build.build.openshift.io/metrology-processor-5'
+            if 'get' in args: return json.dumps({'status': {'phase': 'Complete', 'output': {'to': {'imageDigest': 'sha256:' + 'b' * 64}}}})
+            return 'no verification marker'
+        with patch.object(update, 'run', side_effect=fake_run):
+            with self.assertRaises(RuntimeError): update.main()
+        self.assertFalse(any('patch' in call for call in calls))
 
 
 if __name__ == "__main__":

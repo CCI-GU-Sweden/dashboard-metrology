@@ -1,10 +1,12 @@
 # OMERO server image supplies the matching Ice/OMERO Python runtime.
 FROM registry.k8s.gu.se/core-omero-test/omero-server:1.8
 USER 0
-ARG METEOR_CORE_REF=3de0672afc60199a6fca7be79fb041b730114e47
+ARG METEOR_CORE_REF=261bb69f02980ddef53be2165320e8eb2a976bce
 RUN /opt/omero/server/venv3/bin/pip install --no-cache-dir \
     'psycopg[binary]==3.3.8' \
     "METEOR-core @ https://github.com/CCI-GU-Sweden/METEOR-core/archive/${METEOR_CORE_REF}.tar.gz"
+# Fail the build if the installed distribution does not come from the pinned commit.
+RUN METEOR_EXPECTED_REF="${METEOR_CORE_REF}" /opt/omero/server/venv3/bin/python -c 'import importlib.metadata as m, json, os; u=json.loads(m.distribution("METEOR-core").read_text("direct_url.json"))["url"]; expected="https://github.com/CCI-GU-Sweden/METEOR-core/archive/" + os.environ["METEOR_EXPECTED_REF"] + ".tar.gz"; assert u == expected, (u, expected); print("Verified METEOR-core source:", u)'
 WORKDIR /app
 COPY metrology_processor /app/metrology_processor
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg HOME=/tmp OMERO_USERDIR=/tmp/omero METEOR_CORE_REVISION=${METEOR_CORE_REF}

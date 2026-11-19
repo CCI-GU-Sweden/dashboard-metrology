@@ -16,7 +16,15 @@ IMAGE = "image-registry.openshift-image-registry.svc:5000/core-omero-test/metrol
 
 
 def run(args):
-    return subprocess.run(args, check=True, text=True, capture_output=True).stdout.strip()
+    return subprocess.run(args, check=True, text=True, encoding="utf-8", errors="replace", capture_output=True).stdout.strip()
+
+
+def pin_dockerfile(source, revision):
+    result, count = re.subn(r'^ARG METEOR_CORE_REF=[0-9a-f]{40}$',
+                            f'ARG METEOR_CORE_REF={revision}', source, flags=re.MULTILINE)
+    if count != 1:
+        raise ValueError('Expected exactly one pinned METEOR_CORE_REF in Dockerfile')
+    return result
 
 
 def main():
@@ -31,10 +39,11 @@ def main():
     print(f"Building METEOR-core {revision}", flush=True)
     with tempfile.TemporaryDirectory(prefix="metrology-build-") as directory:
         context = Path(directory)
-        shutil.copy2(ROOT / "Dockerfile.processor", context / "Dockerfile")
+        dockerfile = (ROOT / "Dockerfile.processor").read_text(encoding="utf-8")
+        (context / "Dockerfile").write_text(pin_dockerfile(dockerfile, revision), encoding="utf-8")
         shutil.copytree(ROOT / "metrology_processor", context / "metrology_processor", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         build = run(["oc", "-n", NAMESPACE, "start-build", BUILD_CONFIG,
-                     f"--from-dir={context}", f"--build-arg=METEOR_CORE_REF={revision}", "--wait", "-o", "name"])
+                     f"--from-dir={context}", "--wait", "-o", "name"])
     if not re.fullmatch(r"build(?:\.build\.openshift\.io)?/metrology-processor-\d+", build):
         raise ValueError(f"Unexpected build identifier: {build!r}")
     data = json.loads(run(["oc", "-n", NAMESPACE, "get", build, "-o", "json"]))
@@ -43,6 +52,10 @@ def main():
     digest = data.get("status", {}).get("output", {}).get("to", {}).get("imageDigest", "")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         raise ValueError("Build did not produce a valid image digest")
+    logs = run(["oc", "-n", NAMESPACE, "logs", build])
+    expected = f"Verified METEOR-core source: https://github.com/CCI-GU-Sweden/METEOR-core/archive/{revision}.tar.gz"
+    if expected not in logs:
+        raise RuntimeError("Build log does not verify the installed METEOR-core revision; CronJob was not changed")
     image = f"{IMAGE}@{digest}"
     patch = {"spec": {"jobTemplate": {"spec": {"template": {"spec": {"containers": [{"name": "processor", "image": image}]}}}}}}
     run(["oc", "-n", NAMESPACE, "patch", "cronjob", CRONJOB, "--type=strategic", "-p", json.dumps(patch, separators=(",", ":"))])
