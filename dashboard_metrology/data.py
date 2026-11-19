@@ -45,7 +45,13 @@ def microscope(identifier):
 def lenses(identifier):
     return _rows("""
         SELECT l.id,l.magnification,l.numerical_aperture,
-               count(m.id) AS measurement_count
+               count(m.id) AS measurement_count,
+               (SELECT string_agg(DISTINCT nullif(trim(i.metadata->>'Lens Immersion'), ''), ' / '
+                                  ORDER BY nullif(trim(i.metadata->>'Lens Immersion'), ''))
+                FROM metrology_measurement lm JOIN metrology_run lr ON lr.id=lm.run_id AND lr.state='complete'
+                JOIN metrology_run_input i ON i.run_id=lm.run_id
+                  AND lm.metric_key LIKE i.image_id::text || ':%%'
+                WHERE lm.lens_id=l.id) AS immersion
         FROM metrology_lens l
         LEFT JOIN metrology_measurement m ON m.lens_id=l.id
           AND EXISTS (SELECT 1 FROM metrology_run r WHERE r.id=m.run_id AND r.state='complete')
@@ -124,6 +130,8 @@ def all_measurements(filters, page=1, page_size=50):
     rows = _rows("""SELECT m.id,m.category,m.measurement_type,m.value,m.unit,m.status,m.acquired_at,
         r.imported_at,r.processed_at,r.source,r.fileset_id,microscope.name AS microscope_name,
         l.magnification,l.numerical_aperture,
+        (SELECT nullif(trim(i.metadata->>'Lens Immersion'), '') FROM metrology_run_input i
+         WHERE i.run_id=r.id AND m.metric_key LIKE i.image_id::text || ':%%' LIMIT 1) AS immersion,
         (SELECT i.image_id FROM metrology_run_input i WHERE i.run_id=r.id
          AND m.metric_key LIKE i.image_id::text || ':%%' LIMIT 1) AS image_id""" + base + " WHERE " + where +
         " ORDER BY COALESCE(m.acquired_at,r.imported_at) DESC NULLS LAST,m.id DESC LIMIT %s OFFSET %s",
@@ -135,7 +143,13 @@ def filter_options():
     return {
         'categories': _rows("SELECT DISTINCT category FROM metrology_measurement m JOIN metrology_run r ON r.id=m.run_id WHERE r.state='complete' ORDER BY category"),
         'statuses': _rows("SELECT DISTINCT status FROM metrology_measurement m JOIN metrology_run r ON r.id=m.run_id WHERE r.state='complete' ORDER BY status"),
-        'lenses': _rows("SELECT l.id,l.magnification,l.numerical_aperture,m.name AS microscope_name FROM metrology_lens l JOIN metrology_microscope m ON m.id=l.microscope_id ORDER BY m.name,l.magnification,l.id"),
+        'lenses': _rows("""SELECT l.id,l.magnification,l.numerical_aperture,m.name AS microscope_name,
+            (SELECT string_agg(DISTINCT nullif(trim(i.metadata->>'Lens Immersion'), ''), ' / '
+                               ORDER BY nullif(trim(i.metadata->>'Lens Immersion'), ''))
+             FROM metrology_measurement lm JOIN metrology_run lr ON lr.id=lm.run_id AND lr.state='complete'
+             JOIN metrology_run_input i ON i.run_id=lm.run_id AND lm.metric_key LIKE i.image_id::text || ':%%'
+             WHERE lm.lens_id=l.id) AS immersion
+            FROM metrology_lens l JOIN metrology_microscope m ON m.id=l.microscope_id ORDER BY m.name,l.magnification,l.id"""),
     }
 
 

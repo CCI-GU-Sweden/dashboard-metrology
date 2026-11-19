@@ -13,7 +13,10 @@
 @media(max-width:600px){.metrology-heading{align-items:flex-start;flex-direction:column}}
 .dashboard-content.metrology-page{max-width:none;width:100%;padding:1.5rem}
 .metrology-page [hidden]{display:none!important}
-.metrology-chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:1rem}
+.metrology-chart-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}
+.metrology-chart-grid>div{min-width:0;width:100%;overflow:hidden}
+@media(max-width:1300px){.metrology-chart-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:800px){.metrology-chart-grid{grid-template-columns:minmax(0,1fr)}}
 .metrology-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
 .metrology-gallery img{width:100%;height:auto;max-height:500px;object-fit:contain;background:white;border-radius:6px}
 .metrology-controls{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin:1rem 0}

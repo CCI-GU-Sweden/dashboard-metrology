@@ -13,7 +13,7 @@
   const escapeText = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function layout(title, score) {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    return {xaxis:{title:{text:'Date'}, type:'date'}, yaxis:{title:{text:escapeText(title)}, automargin:true, ...(score ? {range:[0,1.05]} : {})},
+    return {autosize:true, xaxis:{title:{text:'Date'}, type:'date'}, yaxis:{title:{text:escapeText(title)}, automargin:true, ...(score ? {range:[0,1.05]} : {})},
       margin:{l:65,r:20,t:25,b:65}, paper_bgcolor:'transparent', plot_bgcolor:'transparent', font:{color:dark?'#e5e7eb':'#243247'}, legend:{orientation:'h'}};
   }
   function plot(target, traces, title, score, click) {
@@ -29,7 +29,7 @@
       const trace=groups.get(id); trace.x.push(item.day); trace.y.push(item.score); trace.customdata.push(id); });
     return Array.from(groups.values());
   }
-  const lensName = id => { const l=lenses.find(x=>String(x.id)===id); return l ? `${l.magnification || 'Lens'}${l.numerical_aperture == null ? '' : ', NA '+l.numerical_aperture}` : id; };
+  const lensName = id => { const l=lenses.find(x=>String(x.id)===id); return l ? `${l.magnification || 'Lens'}${l.numerical_aperture == null ? '' : ', NA '+l.numerical_aperture}${l.immersion ? ', '+l.immersion : ''}` : id; };
   lensHistory.sort((a,b)=>a.day.localeCompare(b.day));
   categoryHistory.sort((a,b)=>a.day.localeCompare(b.day));
   plot(lensChart, series(lensHistory,'lens_id',lensName),'Score',true,id=>{lensChoice.value=id; selectLens();});

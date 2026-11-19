@@ -8,10 +8,10 @@
     <h2 class="title is-5">Lens scores over time</h2>
     <p class="small-note">Select a lens on the graph or using the selector to explore its categories.</p>
     <div id="lens-chart" style="min-height:360px" aria-label="Lens score history"></div>
-    <div class="metrology-controls"><label for="lens-choice">Objective lens</label><span class="select"><select id="lens-choice"><option value="">Select a lens</option>{% for lens in lenses %}<option value="{{ lens.id }}" {% if lens.id == lens_id %}selected{% endif %}>{{ lens.magnification }}{% if lens.numerical_aperture != None %}, NA {{ lens.numerical_aperture }}{% endif %}</option>{% endfor %}</select></span>
+    <div class="metrology-controls"><label for="lens-choice">Objective lens</label><span class="select"><select id="lens-choice"><option value="">Select a lens</option>{% for lens in lenses %}<option value="{{ lens.id }}" {% if lens.id == lens_id %}selected{% endif %}>{{ lens.magnification }}{% if lens.numerical_aperture != None %}, NA {{ lens.numerical_aperture }}{% endif %}{% if lens.immersion %}, {{ lens.immersion }}{% endif %}</option>{% endfor %}</select></span>
       <button class="button is-light" type="button" id="score-toggle" aria-expanded="false" aria-controls="score-table">Show score table</button></div>
     <div id="score-table" hidden><div class="table-container"><table class="table is-fullwidth"><thead><tr><th>Date</th><th>Level</th><th>Category</th><th>Lens</th><th>Score</th><th>Status</th></tr></thead><tbody>
-    {% for score in scores %}<tr><td>{{ score.period_start|date:'Y-m-d' }}</td><td>{{ score.level }}</td><td>{{ score.score_key }}</td><td>{{ score.magnification|default:'—' }}</td><td>{{ score.score|floatformat:2 }}</td><td>{{ score.status }}</td></tr>{% empty %}<tr><td colspan="6">No scores calculated yet.</td></tr>{% endfor %}</tbody></table></div></div>
+    {% for score in scores %}<tr><td>{{ score.period_start|date:'Y-m-d' }}</td><td>{{ score.level }}</td><td>{{ score.score_key }}</td><td>{{ score.magnification|default:'—' }}{% if score.immersion %}, {{ score.immersion }}{% endif %}</td><td>{{ score.score|floatformat:2 }}</td><td>{{ score.status }}</td></tr>{% empty %}<tr><td colspan="6">No scores calculated yet.</td></tr>{% endfor %}</tbody></table></div></div>
   </div>
   <div id="lens-detail" class="box" hidden>
     <h2 class="title is-5">Category scores</h2><p class="small-note">Select a category on the graph or with the selector to see its measurements.</p>

@@ -87,14 +87,14 @@ def microscope(request, microscope_id):
             info_lens = lens_lookup.get(lens, {})
             scores.append({"level": "lens", "score_key": "Overall", "score": value,
                            "status": scoring.aggregate_status(value), "period_start": day,
-                           "magnification": info_lens.get("magnification")})
+                           "magnification": info_lens.get("magnification"), "immersion": info_lens.get("immersion")})
         for (mid, lens, category, day), value in categories.items():
             if lens_id is not None and lens != lens_id:
                 continue
             info_lens = lens_lookup.get(lens, {})
             scores.append({"level": "category", "score_key": category, "score": value,
                            "status": scoring.aggregate_status(value), "period_start": day,
-                           "magnification": info_lens.get("magnification")})
+                           "magnification": info_lens.get("magnification"), "immersion": info_lens.get("immersion")})
         scores.sort(key=lambda row: row["period_start"], reverse=True)
         lens_history = [{"lens_id": lens, "day": str(day), "score": value}
                         for (_, lens, day), value in objectives.items()]

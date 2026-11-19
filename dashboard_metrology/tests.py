@@ -107,11 +107,12 @@ class ViewerTests(SimpleTestCase):
 
     @patch("dashboard_metrology.views.data.latest_scores", return_value=[])
     @patch("dashboard_metrology.views.data.measurements", return_value=([], 0))
-    @patch("dashboard_metrology.views.data.lenses", return_value=[{"id": 2, "magnification": "40x", "numerical_aperture": 1.2}])
+    @patch("dashboard_metrology.views.data.lenses", return_value=[{"id": 2, "magnification": "40x", "numerical_aperture": 1.2, "immersion": "Water"}])
     @patch("dashboard_metrology.views.data.microscope", return_value={"id": 1, "name": "Test", "location": None})
     def test_microscope_filter_and_missing_scores(self, info, lenses, measurements, scores):
         response = views.microscope(self.request("/metrology/microscopes/1/?lens=2", self.staff), 1)
         self.assertContains(response, "No scores calculated yet")
+        self.assertContains(response, "Water")
         measurements.assert_called_once_with(1, 2, 1)
         self.assertEqual(views.microscope(self.request("/metrology/microscopes/1/?lens=9", self.staff), 1).status_code, 404)
         self.assertEqual(views.microscope(self.request("/metrology/microscopes/1/?page=-1", self.staff), 1).status_code, 400)
