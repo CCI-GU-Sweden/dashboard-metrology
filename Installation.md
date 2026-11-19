@@ -2,6 +2,8 @@
 
 This is a step-by-step installation guide for the metrology module. **Current status:** SQL versions 1–3 are installed in `core-omero-test`; a daily test CronJob is enabled. The Django viewer computes scores on demand using read-only PostgreSQL queries. Threshold editing and administrative REDO remain to be implemented. Do not deploy this guide unchanged to production.
 
+Upgrade with `sql/004_processing_date.sql` before deploying a processor or dashboard that requires schema version 4. The processor records completion time in `metrology_run.processed_at`; historical completion times are left unknown because `updated_at` is not guaranteed to represent completion. Acquisition timestamps from OMERO key-value annotations without a time zone are interpreted as `Europe/Stockholm` by default; set `METROLOGY_ACQUISITION_TIMEZONE` to the microscope's local IANA zone if needed. Ambiguous or nonexistent daylight-saving times are left unset. The measurement table displays dates in Stockholm time. For this test database, `scripts/backfill_test_acquisition_dates.py` previews repairs from saved metadata and `--apply` performs them without OMERO access.
+
 ## 1. Prerequisites and target
 
 1. Select the intended environment and verify its namespace, PostgreSQL host, database and OMERO server. The current test target is namespace `core-omero-test`, deployment `filestatistics-pg15`, database `omerofilestats` (PostgreSQL 15), OMERO service `omero:4064`, group `Metrology` (ID 103). These identifiers are environment-specific.

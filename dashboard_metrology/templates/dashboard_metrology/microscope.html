@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load static %}
+{% extends 'base.html' %}{% load static tz %}
 {% block content %}
 <section class="dashboard-content">
   <a class="button is-light" href="{% url 'metrology_home' %}">← Metrology</a>
@@ -28,11 +28,11 @@
   <p class="small-note">{{ total }} measurements. Dates use acquisition time where available; otherwise OMERO import time.</p>
   <p class="small-note">Scores use configured thresholds when available; otherwise a ±10% range around the current median of at least three comparable measurements. Scores and references can change as new data arrives.</p>
   {% if measurements %}<div class="table-container"><table class="table is-fullwidth is-hoverable">
-    <thead><tr><th>Date</th><th>Lens</th><th>Category</th><th>Measurement</th><th>Value</th><th>Score</th><th>Status</th><th>OMERO</th></tr></thead><tbody>
-    {% for item in measurements %}<tr><td>{{ item.measured_at|date:'Y-m-d H:i'|default:'—' }}{% if item.measured_at and not item.has_acquisition_time %}<span class="small-note"> (import)</span>{% endif %}</td>
-      <td>{{ item.magnification|default:'—' }}{% if item.numerical_aperture != None %}, NA {{ item.numerical_aperture }}{% endif %}</td><td>{{ item.category }}</td><td>{{ item.measurement_type }}</td><td>{{ item.value|floatformat:3 }} {{ item.unit }}</td>
+    <thead><tr><th>Acquisition date</th><th>Import date</th><th>Processing date</th><th>Lens</th><th>Category</th><th>Measurement</th><th>Value</th><th>Score</th><th>Status</th><th>OMERO</th></tr></thead><tbody>
+    {% for item in measurements %}{% timezone 'Europe/Stockholm' %}<tr><td>{{ item.acquired_at|date:'Y-m-d H:i'|default:'—' }}</td>
+      <td>{{ item.imported_at|date:'Y-m-d H:i'|default:'—' }}</td><td>{{ item.processed_at|date:'Y-m-d H:i'|default:'—' }}</td><td>{{ item.magnification|default:'—' }}{% if item.numerical_aperture != None %}, NA {{ item.numerical_aperture }}{% endif %}</td><td>{{ item.category }}</td><td>{{ item.measurement_type }}</td><td>{{ item.value|floatformat:3 }} {{ item.unit }}</td>
       <td>{% if item.score != None %}{{ item.score|floatformat:2 }} ({{ item.score_status }}){% else %}Not scored{% endif %}</td><td>{{ item.status }}</td>
-      <td>{% if item.omero_url %}<a href="{{ item.omero_url }}" target="_blank" rel="noopener noreferrer">Open image</a>{% else %}—{% endif %}</td></tr>{% endfor %}
+      <td>{% if item.omero_url %}<a href="{{ item.omero_url }}" target="_blank" rel="noopener noreferrer">Open image</a>{% else %}—{% endif %}</td></tr>{% endtimezone %}{% endfor %}
     </tbody></table></div>
     <nav class="buttons" aria-label="Measurement pages">
       {% if previous %}<a class="button" href="?page={{ previous }}{% if lens_id %}&amp;lens={{ lens_id }}{% endif %}">Previous</a>{% endif %}

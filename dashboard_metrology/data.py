@@ -65,7 +65,7 @@ def measurements(microscope_id, lens_id=None, page=1, page_size=50):
         SELECT m.id,m.category,m.measurement_type,m.value,m.unit,m.score,m.status,
                COALESCE(m.acquired_at,r.imported_at) AS measured_at,
                m.acquired_at IS NOT NULL AS has_acquisition_time,
-               l.magnification,l.numerical_aperture,r.fileset_id,r.source,
+               l.magnification,l.numerical_aperture,r.fileset_id,r.source,m.acquired_at,r.imported_at,r.processed_at,
                (SELECT i.image_id FROM metrology_run_input i WHERE i.run_id=r.id
                 AND m.metric_key LIKE CAST(i.image_id AS text) || ':%%' LIMIT 1) AS image_id
         FROM metrology_measurement m JOIN metrology_run r ON r.id=m.run_id

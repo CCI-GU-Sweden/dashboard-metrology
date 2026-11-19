@@ -5,6 +5,7 @@ import numpy as np
 
 from metrology_processor.omero_io import filesets, load_image
 from metrology_processor.results import normalize_results
+from metrology_processor.dates import acquired_at
 
 
 class Event:
@@ -31,6 +32,14 @@ class Fileset(Ref):
 
 
 class ProcessorTests(unittest.TestCase):
+    def test_acquisition_date_uses_local_timezone_and_rejects_dst_ambiguity(self):
+        with patch.dict("os.environ", {"METROLOGY_ACQUISITION_TIMEZONE": "Europe/Stockholm"}):
+            self.assertEqual(acquired_at({"Acquisition date": "2025-06-09 10:51:59"}).isoformat(), "2025-06-09T10:51:59+02:00")
+            self.assertEqual(acquired_at({"Acquisition date": "2025-01-09 10:51:59"}).isoformat(), "2025-01-09T10:51:59+01:00")
+            self.assertEqual(acquired_at({"Acquisition date": "2025-06-09T10:51:59Z"}).isoformat(), "2025-06-09T10:51:59+00:00")
+            self.assertIsNone(acquired_at({"Acquisition date": "2025-10-26 02:30:00"}))
+            self.assertIsNone(acquired_at({"Acquisition date": "2025-03-30 02:30:00"}))
+            self.assertIsNone(acquired_at({"Acquisition date": "invalid"}))
     def test_filesets_sorted_by_import_time_and_id(self):
         connection = type("Conn", (), {"getObjects": lambda self, kind: [Fileset(1, 10, [4]), Fileset(3, 20, [9, 2]), Fileset(2, 20, [5])]})()
         self.assertEqual(filesets(connection), [(3, 20, [2, 9]), (2, 20, [5]), (1, 10, [4])])

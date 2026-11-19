@@ -13,22 +13,11 @@ from psycopg.types.json import Jsonb
 from .analysis import analyze_fileset
 from .omero_io import attach, connect, filesets
 from .metadata import positive_number
+from .dates import acquired_at
 
 LOG = logging.getLogger(__name__)
 VERSION = "meteor-core-" + os.getenv("METEOR_CORE_REVISION", "3de0672afc60199a6fca7be79fb041b730114e47")
 CONFIG = "v1"
-
-
-def acquired_at(metadata):
-    value = str(metadata.get("Acquisition date", "")).strip()
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    # OMERO import timestamps are authoritative if the acquisition has no zone.
-    return parsed if parsed.tzinfo is not None else None
 
 
 def claim(db, source, group_id, fileset_id, imported_ms):
@@ -84,7 +73,7 @@ def upload_artifacts(db, connection, run_id):
         with db.transaction():
             db.execute("UPDATE public.metrology_artifact SET state='linked',annotation_id=%s WHERE id=%s", (annotation_id, artifact_id))
     with db.transaction():
-        db.execute("UPDATE public.metrology_run SET state='complete',error_message=NULL,updated_at=now() WHERE id=%s", (run_id,))
+        db.execute("UPDATE public.metrology_run SET state='complete',error_message=NULL,processed_at=now(),updated_at=now() WHERE id=%s", (run_id,))
 
 
 def run(limit):
@@ -97,8 +86,8 @@ def run(limit):
         if not db.execute("SELECT pg_try_advisory_lock(%s)", (730625103,)).fetchone()[0]:
             LOG.info("Another metrology processor is running")
             return 0
-        if db.execute("SELECT max(version) FROM public.metrology_schema_version").fetchone()[0] != 3:
-            raise RuntimeError("Schema version 3 is required")
+        if db.execute("SELECT max(version) FROM public.metrology_schema_version").fetchone()[0] != 4:
+            raise RuntimeError("Schema version 4 is required")
         connection = connect()
         selected = failures = 0
         for fileset_id, imported, image_ids in filesets(connection):
