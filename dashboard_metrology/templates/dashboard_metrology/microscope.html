@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'base.html' %}{% load static %}
 {% block content %}
 <section class="dashboard-content">
   <a class="button is-light" href="{% url 'metrology_home' %}">← Metrology</a>
@@ -10,6 +10,13 @@
   {% for score in scores %}<tr><td>{{ score.period_start|date:'Y-m-d' }}</td><td>{{ score.level }}</td><td>{{ score.score_key }}</td><td>{{ score.magnification|default:'—' }}</td><td>{{ score.score|floatformat:2 }}</td><td>{{ score.status }}</td></tr>{% endfor %}
   </tbody></table></div>
   {% else %}<p class="small-note">No scores calculated yet.</p>{% endif %}
+  <h2 class="title is-5 mt-5">Measurement history</h2>
+  <div id="metrology-history" data-url="{% url 'metrology_history' microscope.id %}{% if lens_id %}?lens={{ lens_id }}{% endif %}">
+    <label for="history-metric">Measurement</label>
+    <span class="select"><select id="history-metric" disabled><option>Loading…</option></select></span>
+    <p id="history-status" class="small-note" role="status">Loading measurement history…</p>
+    <div id="history-chart" style="width:100%;min-height:360px" aria-label="Interactive measurement history chart"></div>
+  </div>
   <h2 class="title is-5 mt-5">Measurements</h2>
   <form method="get" class="mb-4"><label for="lens">Objective lens</label>
     <span class="select"><select id="lens" name="lens"><option value="">All lenses</option>
@@ -31,4 +38,6 @@
     </nav>
   {% else %}<p>No measurements on this page.</p>{% endif %}
 </section>
+<script src="{% static 'vendor/plotly/plotly.min.js' %}" defer></script>
+<script src="{% static 'dashboard_metrology/history.js' %}" defer></script>
 {% endblock %}

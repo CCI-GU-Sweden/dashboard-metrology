@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="dashboard-content">
+  <a class="button is-light" href="{% url 'metrology_home' %}">← Metrology</a>
+  <h1 class="title is-3 mt-4">Filesets needing attention</h1>
+  <p class="small-note">{{ total }} filesets. Failures disappear from this list after a successful run.</p>
+  {% if failures %}
+  <div class="table-container"><table class="table is-fullwidth">
+    <thead><tr><th>Fileset</th><th>Source</th><th>Last attempt</th><th>Status</th><th>Attempts</th><th>Reason</th></tr></thead>
+    <tbody>{% for failure in failures %}<tr><td>{{ failure.fileset_id }}</td><td>{{ failure.source }}</td><td>{{ failure.updated_at|date:'Y-m-d H:i' }}</td><td>{{ failure.state }}</td><td>{{ failure.attempt_count }}</td><td>{{ failure.error_message|default:'No details recorded' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <nav class="buttons" aria-label="Review pages">{% if previous %}<a class="button" href="?page={{ previous }}">Previous</a>{% endif %}<span class="button is-static">Page {{ page }}</span>{% if next %}<a class="button" href="?page={{ next }}">Next</a>{% endif %}</nav>
+  {% else %}<p>No filesets need attention on this page.</p>{% endif %}
+</section>
+{% endblock %}

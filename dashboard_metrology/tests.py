@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import patch
+import json
 
 from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, override_settings
@@ -34,6 +35,8 @@ class ViewerTests(SimpleTestCase):
         for user in (self.researcher, self.anonymous, SimpleNamespace(is_authenticated=True, is_active=False, role="staff")):
             self.assertEqual(views.home(self.request("/metrology/", user)).status_code, 403)
             self.assertEqual(views.microscope(self.request("/metrology/microscopes/1/", user), 1).status_code, 403)
+            self.assertEqual(views.history(self.request("/metrology/microscopes/1/history/", user), 1).status_code, 403)
+            self.assertEqual(views.failures(self.request("/metrology/review/", user)).status_code, 403)
 
     @patch("dashboard_metrology.views.data.microscopes")
     @patch("dashboard_metrology.views.data.summary")
@@ -72,3 +75,28 @@ class ViewerTests(SimpleTestCase):
     def test_registered_urls_resolve(self):
         self.assertEqual(reverse("metrology_home"), "/metrology/")
         self.assertEqual(reverse("metrology_microscope", args=[42]), "/metrology/microscopes/42/")
+        self.assertEqual(reverse("metrology_history", args=[42]), "/metrology/microscopes/42/history/")
+        self.assertEqual(reverse("metrology_failures"), "/metrology/review/")
+
+    @patch("dashboard_metrology.views.data.history", return_value=([{"measurement_type": "PSF X", "value": 0.4}], False))
+    @patch("dashboard_metrology.views.data.lenses", return_value=[{"id": 2}])
+    @patch("dashboard_metrology.views.data.microscope", return_value={"id": 1})
+    def test_history_filters_authorization_and_data(self, microscope, lenses, history):
+        response = views.history(self.request("/metrology/microscopes/1/history/?lens=2", self.staff), 1)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content)["measurements"][0]["value"], 0.4)
+        history.assert_called_once_with(1, 2)
+        self.assertEqual(views.history(self.request("/metrology/microscopes/1/history/?lens=8", self.staff), 1).status_code, 404)
+        self.assertEqual(views.history(self.request("/metrology/microscopes/1/history/?lens=-1", self.staff), 1).status_code, 400)
+
+    @patch("dashboard_metrology.views.data.failed_runs")
+    def test_review_page_escapes_failure_and_handles_empty(self, failed_runs):
+        failed_runs.return_value = ([{"fileset_id": 3, "source": "test", "state": "permanent_failure", "attempt_count": 3, "error_message": "<script>bad</script>", "updated_at": None}], 1)
+        response = views.failures(self.request("/metrology/review/", self.staff))
+        self.assertContains(response, "&lt;script&gt;bad&lt;/script&gt;", html=False)
+        failed_runs.return_value = ([], 0)
+        self.assertContains(views.failures(self.request("/metrology/review/", self.staff)), "No filesets need attention")
+
+    @patch("dashboard_metrology.views.data.microscope", side_effect=DatabaseError)
+    def test_history_unavailable(self, _):
+        self.assertEqual(views.history(self.request("/metrology/microscopes/1/history/", self.staff), 1).status_code, 503)

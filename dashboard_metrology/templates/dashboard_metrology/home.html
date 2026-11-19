@@ -7,7 +7,7 @@
   <div class="columns is-multiline">
     <div class="column"><div class="box"><p>Microscopes</p><strong>{{ summary.microscopes }}</strong></div></div>
     <div class="column"><div class="box"><p>Measurements</p><strong>{{ summary.measurements }}</strong></div></div>
-    <div class="column"><div class="box"><p>Filesets needing attention</p><strong>{{ summary.failures }}</strong></div></div>
+    <div class="column"><div class="box"><p><a href="{% url 'metrology_failures' %}">Filesets needing attention</a></p><strong>{{ summary.failures }}</strong></div></div>
   </div>
   <h2 class="title is-5">Microscopes</h2>
   {% if microscopes %}

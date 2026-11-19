@@ -16,7 +16,9 @@ def summary():
            WHERE r.state='complete') AS measurements,
           (SELECT count(*) FROM metrology_run r WHERE r.state IN ('retryable_failure','permanent_failure')
            AND NOT EXISTS (SELECT 1 FROM metrology_run done WHERE done.source=r.source
-               AND done.fileset_id=r.fileset_id AND done.state='complete')) AS failures
+               AND done.fileset_id=r.fileset_id AND done.state='complete')
+           AND NOT EXISTS (SELECT 1 FROM metrology_run newer WHERE newer.source=r.source
+               AND newer.fileset_id=r.fileset_id AND newer.state IN ('retryable_failure','permanent_failure') AND newer.id>r.id)) AS failures
     """)[0]
 
 
@@ -82,3 +84,40 @@ def latest_scores(microscope_id):
         FROM metrology_score s LEFT JOIN metrology_lens l ON l.id=s.lens_id
         WHERE s.microscope_id=%s ORDER BY s.period_start DESC,s.id DESC LIMIT 50
     """, [microscope_id])
+
+
+def history(microscope_id, lens_id=None, limit=5000):
+    params = [microscope_id]
+    condition = "m.microscope_id=%s AND r.state='complete'"
+    if lens_id is not None:
+        condition += " AND m.lens_id=%s"
+        params.append(lens_id)
+    rows = _rows(f"""
+        SELECT m.id, m.category, m.measurement_type, m.unit, m.value, m.status,
+               m.lens_id, l.magnification, l.numerical_aperture,
+               COALESCE(m.acquired_at,r.imported_at) AS measured_at,
+               m.acquired_at IS NOT NULL AS has_acquisition_time
+        FROM metrology_measurement m JOIN metrology_run r ON r.id=m.run_id
+        LEFT JOIN metrology_lens l ON l.id=m.lens_id
+        WHERE {condition} AND COALESCE(m.acquired_at,r.imported_at) IS NOT NULL
+        ORDER BY COALESCE(m.acquired_at,r.imported_at) DESC,m.id DESC
+        LIMIT %s
+    """, [*params, limit + 1])
+    return list(reversed(rows[:limit])), len(rows) > limit
+
+
+def failed_runs(page=1, page_size=50):
+    # Present the most recent failure per source/fileset; hide superseded failures.
+    base = """
+        FROM metrology_run r
+        WHERE r.state IN ('retryable_failure','permanent_failure')
+          AND NOT EXISTS (SELECT 1 FROM metrology_run done WHERE done.source=r.source
+                          AND done.fileset_id=r.fileset_id AND done.state='complete')
+          AND NOT EXISTS (SELECT 1 FROM metrology_run newer WHERE newer.source=r.source
+                          AND newer.fileset_id=r.fileset_id
+                          AND newer.state IN ('retryable_failure','permanent_failure') AND newer.id>r.id)
+    """
+    total = _rows("SELECT count(*) AS total " + base)[0]["total"]
+    rows = _rows("SELECT r.fileset_id,r.source,r.state,r.attempt_count,r.error_message,r.updated_at " + base +
+                 " ORDER BY r.updated_at DESC,r.id DESC LIMIT %s OFFSET %s", [page_size, (page - 1) * page_size])
+    return rows, total

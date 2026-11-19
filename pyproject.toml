@@ -14,4 +14,4 @@ license = "MIT"
 include = ["dashboard_metrology*"]
 
 [tool.setuptools.package-data]
-dashboard_metrology = ["templates/dashboard_metrology/*.html"]
+dashboard_metrology = ["templates/dashboard_metrology/*.html", "static/dashboard_metrology/*.js"]

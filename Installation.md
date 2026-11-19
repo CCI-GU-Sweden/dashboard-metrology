@@ -26,7 +26,7 @@ This is a step-by-step installation guide for the metrology module. **Current st
 ## 3. Install and register the Django module
 
 1. Install a compatible pinned release or commit of this package in the dashboard image. For local development, `pip install -e ./modules/dashboard-metrology --no-deps` works with a compatible dashboard environment. Local `modules/` checkouts are ignored by the core and are not copied into its image.
-2. Enable `DASHBOARD_METROLOGY_ENABLED=1` in the core; the descriptor registers URLs and checks staff/admin access. Set `METROLOGY_OMERO_SOURCE` to match the processor's source and `METROLOGY_OMERO_WEB_URL` to the trusted HTTPS OMERO web base for image links. The viewer checks every endpoint and queries completed results only. Scoring, status changes and REDO are not available in phase 1.
+2. Enable `DASHBOARD_METROLOGY_ENABLED=1` in the core; the descriptor registers URLs and checks staff/admin access. Set `METROLOGY_OMERO_SOURCE` to match the processor's source and `METROLOGY_OMERO_WEB_URL` to the trusted HTTPS OMERO web base for image links. The viewer checks every endpoint and displays completed results plus unresolved fileset failures. The interactive chart loads the dashboard's shared Plotly static asset and is capped at 5,000 recent measurements; run `collectstatic` in the dashboard build. Scoring, status changes and REDO are not yet available.
 3. Rebuild the dashboard image, run `collectstatic`, and deploy through the normal dashboard rollout. Configure the existing dashboard database credentials. Verify disabled and enabled behavior, pages, APIs, audit records and denial for unauthorized users.
 
 ## 4. Install and run the processor — test validation in progress
