@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="dashboard-content">
+  <a class="button is-light" href="{% url 'home' %}">← Overview</a>
+  <h1 class="title is-3 mt-4">Metrology</h1>
+  <p class="subtitle is-6">Microscope performance measurements from OMERO</p>
+  <div class="columns is-multiline">
+    <div class="column"><div class="box"><p>Microscopes</p><strong>{{ summary.microscopes }}</strong></div></div>
+    <div class="column"><div class="box"><p>Measurements</p><strong>{{ summary.measurements }}</strong></div></div>
+    <div class="column"><div class="box"><p>Filesets needing attention</p><strong>{{ summary.failures }}</strong></div></div>
+  </div>
+  <h2 class="title is-5">Microscopes</h2>
+  {% if microscopes %}
+  <div class="table-container"><table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Microscope</th><th>Lenses</th><th>Measurements</th><th>Latest data</th></tr></thead>
+    <tbody>{% for microscope in microscopes %}
+      <tr><td><a href="{% url 'metrology_microscope' microscope.id %}">{{ microscope.name }}</a>{% if microscope.location %}<br><span class="small-note">{{ microscope.location }}</span>{% endif %}</td>
+      <td>{{ microscope.lens_count }}</td><td>{{ microscope.measurement_count }}</td><td>{{ microscope.last_measurement|date:'Y-m-d H:i'|default:'—' }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p>No microscope measurements are available yet.</p>{% endif %}
+</section>
+{% endblock %}

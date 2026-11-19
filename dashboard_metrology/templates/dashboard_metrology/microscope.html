@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="dashboard-content">
+  <a class="button is-light" href="{% url 'metrology_home' %}">← Metrology</a>
+  <h1 class="title is-3 mt-4">{{ microscope.name }}</h1>
+  {% if microscope.location %}<p>{{ microscope.location }}</p>{% endif %}
+  <h2 class="title is-5 mt-5">Scores</h2>
+  {% if scores %}
+  <div class="table-container"><table class="table is-fullwidth"><thead><tr><th>Date</th><th>Level</th><th>Measure</th><th>Lens</th><th>Score</th><th>Status</th></tr></thead><tbody>
+  {% for score in scores %}<tr><td>{{ score.period_start|date:'Y-m-d' }}</td><td>{{ score.level }}</td><td>{{ score.score_key }}</td><td>{{ score.magnification|default:'—' }}</td><td>{{ score.score|floatformat:2 }}</td><td>{{ score.status }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="small-note">No scores calculated yet.</p>{% endif %}
+  <h2 class="title is-5 mt-5">Measurements</h2>
+  <form method="get" class="mb-4"><label for="lens">Objective lens</label>
+    <span class="select"><select id="lens" name="lens"><option value="">All lenses</option>
+    {% for lens in lenses %}<option value="{{ lens.id }}" {% if lens.id == lens_id %}selected{% endif %}>{{ lens.magnification }}{% if lens.numerical_aperture != None %}, NA {{ lens.numerical_aperture }}{% endif %}</option>{% endfor %}
+    </select></span> <button class="button" type="submit">Apply</button>
+  </form>
+  <p class="small-note">{{ total }} measurements. Dates use acquisition time where available; otherwise OMERO import time.</p>
+  {% if measurements %}<div class="table-container"><table class="table is-fullwidth is-hoverable">
+    <thead><tr><th>Date</th><th>Lens</th><th>Category</th><th>Measurement</th><th>Value</th><th>Score</th><th>Status</th><th>OMERO</th></tr></thead><tbody>
+    {% for item in measurements %}<tr><td>{{ item.measured_at|date:'Y-m-d H:i'|default:'—' }}{% if item.measured_at and not item.has_acquisition_time %}<span class="small-note"> (import)</span>{% endif %}</td>
+      <td>{{ item.magnification|default:'—' }}{% if item.numerical_aperture != None %}, NA {{ item.numerical_aperture }}{% endif %}</td><td>{{ item.category }}</td><td>{{ item.measurement_type }}</td><td>{{ item.value|floatformat:3 }} {{ item.unit }}</td>
+      <td>{% if item.score != None %}{{ item.score|floatformat:2 }}{% else %}Not scored{% endif %}</td><td>{{ item.status }}</td>
+      <td>{% if item.omero_url %}<a href="{{ item.omero_url }}" target="_blank" rel="noopener noreferrer">Open image</a>{% else %}—{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <nav class="buttons" aria-label="Measurement pages">
+      {% if previous %}<a class="button" href="?page={{ previous }}{% if lens_id %}&amp;lens={{ lens_id }}{% endif %}">Previous</a>{% endif %}
+      <span class="button is-static">Page {{ page }}</span>
+      {% if next %}<a class="button" href="?page={{ next }}{% if lens_id %}&amp;lens={{ lens_id }}{% endif %}">Next</a>{% endif %}
+    </nav>
+  {% else %}<p>No measurements on this page.</p>{% endif %}
+</section>
+{% endblock %}

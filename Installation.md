@@ -1,6 +1,6 @@
 # Installation and setup
 
-This is a step-by-step installation guide for the metrology module. **Current status:** SQL versions 1–3 are installed in `core-omero-test`; a full batch was run with the newer METEOR-core, and a daily test CronJob is enabled. One saturated acquisition failed. The Django package, dashboard registration and UI are not implemented. Do not deploy this guide unchanged to production.
+This is a step-by-step installation guide for the metrology module. **Current status:** SQL versions 1–3 are installed in `core-omero-test`; a full batch was run with the newer METEOR-core, and a daily test CronJob is enabled. One saturated acquisition failed. The phase 1 Django viewer is read-only; scoring and administrative actions remain to be implemented. Do not deploy this guide unchanged to production.
 
 ## 1. Prerequisites and target
 
@@ -23,10 +23,10 @@ This is a step-by-step installation guide for the metrology module. **Current st
 3. Apply `sql/002_analysis_override.sql` then `sql/003_artifact_payload.sql` once, using the same controlled setup identity. Check `SELECT max(version) FROM public.metrology_schema_version;` returns `3`, and inspect grants and table ownership with the target identities. These upgrades have already been applied in test. A future revision must have an ordered upgrade script; `001_initial.sql` is a baseline, not a general-purpose migration or collision-reconciliation tool. SQL is currently the schema authority; future Django models must map this baseline and its upgrade process rather than independently recreating it.
 4. Provision a **separate login identity** for the processor using the database operator's approved credential workflow. Grant it membership in `metrology_processor`, configure its password as a Kubernetes Secret, and verify it inherits the required privileges and cannot modify unrelated tables or perform DDL. `metrology_processor` itself cannot log in. In test, login `metrology_worker` and Secret `dashboard-metrology-db` have been created; TCP login and schema-version SELECT succeeded. Avoid embedding credentials in SQL, shell history, manifests or this repository. The application connection must have only the privileges needed for its dashboard/management-command dependencies in addition to module tables; decide and test those grants when the command is implemented.
 
-## 3. Install and register the Django module — pending implementation
+## 3. Install and register the Django module
 
-1. Build and publish a versioned package containing the app, templates, static assets and compatible SQL upgrades. Pin that release/commit in the dashboard core's requirements. For local development only, the dashboard contract supports `pip install -e ./modules/dashboard-metrology --no-deps` once the package exists. Local `modules/` checkouts are ignored by the core and are not copied into its image.
-2. In dashboard settings add the opt-in `DASHBOARD_METROLOGY_ENABLED` switch, app and module descriptor as shown in [Proposal.md](Proposal.md). The descriptor registers URLs. Implement endpoint-level role checks: staff may view; admins may request status changes and REDO. REDO must enqueue processor work, never run image analysis in the web process.
+1. Install a compatible pinned release or commit of this package in the dashboard image. For local development, `pip install -e ./modules/dashboard-metrology --no-deps` works with a compatible dashboard environment. Local `modules/` checkouts are ignored by the core and are not copied into its image.
+2. Enable `DASHBOARD_METROLOGY_ENABLED=1` in the core; the descriptor registers URLs and checks staff/admin access. Set `METROLOGY_OMERO_SOURCE` to match the processor's source and `METROLOGY_OMERO_WEB_URL` to the trusted HTTPS OMERO web base for image links. The viewer checks every endpoint and queries completed results only. Scoring, status changes and REDO are not available in phase 1.
 3. Rebuild the dashboard image, run `collectstatic`, and deploy through the normal dashboard rollout. Configure the existing dashboard database credentials. Verify disabled and enabled behavior, pages, APIs, audit records and denial for unauthorized users.
 
 ## 4. Install and run the processor — test validation in progress
