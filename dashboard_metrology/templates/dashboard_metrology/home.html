@@ -3,7 +3,7 @@
 <section class="dashboard-content metrology-page">
   <a class="button is-light" href="{% url 'home' %}">← Overview</a>
   <div class="metrology-heading"><div><p class="eyebrow">Microscope health</p><h1 class="title is-3">Metrology</h1><p>Explore measurements and performance over time.</p></div>
-    <a class="button is-light" href="{% url 'metrology_failures' %}">Needs attention <strong class="ml-2">{{ summary.failures }}</strong></a></div>
+    <div class="buttons"><a class="button is-light" href="{% url 'metrology_measurements' %}">Measurements</a><a class="button is-light" href="{% url 'metrology_failures' %}">Needs attention <strong class="ml-2">{{ summary.failures }}</strong></a></div></div>
   <div class="metrology-cards">
     {% for microscope in microscopes %}
     <a class="metrology-card" href="{% url 'metrology_microscope' microscope.id %}">

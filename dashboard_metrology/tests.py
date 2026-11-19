@@ -55,6 +55,39 @@ class ViewerTests(SimpleTestCase):
             self.assertEqual(views.microscope(self.request("/metrology/microscopes/1/", user), 1).status_code, 403)
             self.assertEqual(views.history(self.request("/metrology/microscopes/1/history/", user), 1).status_code, 403)
             self.assertEqual(views.failures(self.request("/metrology/review/", user)).status_code, 403)
+            self.assertEqual(views.measurements(self.request("/metrology/measurements/", user)).status_code, 403)
+            self.assertEqual(views.figures(self.request("/metrology/microscopes/1/figures/", user), 1).status_code, 403)
+            self.assertEqual(views.attachment(self.request("/metrology/attachments/1/", user), 1).status_code, 403)
+
+    @patch("dashboard_metrology.views.data.figure_payload")
+    def test_image_attachment_returns_safe_content_type_and_missing_is_404(self, payload):
+        payload.return_value = {"payload": b"example", "mime_type": "image/png"}
+        response = views.attachment(self.request("/metrology/attachments/1/", self.staff), 1)
+        self.assertEqual(response.content, b"example")
+        self.assertEqual(response['Content-Type'], 'image/png')
+        self.assertEqual(response['X-Content-Type-Options'], 'nosniff')
+        payload.return_value = None
+        self.assertEqual(views.attachment(self.request("/metrology/attachments/1/", self.staff), 1).status_code, 404)
+
+    @patch("dashboard_metrology.views.data.figures", return_value=[{"id": 12, "image_id": 567, "artifact_key": "567-figure-0.png", "mime_type": "image/png"}])
+    @patch("dashboard_metrology.views.data.lenses", return_value=[{"id": 2}])
+    @patch("dashboard_metrology.views.data.microscope", return_value={"id": 1})
+    def test_figures_validate_selection_and_return_local_urls(self, microscope, lenses, figures):
+        response = views.figures(self.request('/metrology/microscopes/1/figures/?lens=2&category=PSF', self.staff), 1)
+        self.assertEqual(json.loads(response.content)['figures'][0]['url'], '/metrology/attachments/12/')
+        figures.assert_called_once_with(1, 2, 'PSF')
+        self.assertEqual(views.figures(self.request('/metrology/microscopes/1/figures/?lens=3&category=PSF', self.staff), 1).status_code, 404)
+        self.assertEqual(views.figures(self.request('/metrology/microscopes/1/figures/?lens=-1&category=PSF', self.staff), 1).status_code, 400)
+
+    @patch('dashboard_metrology.views.data.microscopes', return_value=[])
+    @patch('dashboard_metrology.views.data.filter_options', return_value={'lenses': [], 'categories': [], 'statuses': []})
+    @patch('dashboard_metrology.views.data.all_measurements', return_value=([], 0))
+    def test_measurements_filter_and_validation(self, measurements, options, microscopes):
+        response = views.measurements(self.request('/metrology/measurements/?category=PSF&search=spot', self.staff))
+        self.assertContains(response, 'No measurements match these filters')
+        self.assertEqual(measurements.call_args.args[0]['category'], 'PSF')
+        self.assertEqual(measurements.call_args.args[0]['search'], 'spot')
+        self.assertEqual(views.measurements(self.request('/metrology/measurements/?lens=-1', self.staff)).status_code, 400)
 
     @patch("dashboard_metrology.views.data.microscopes")
     @patch("dashboard_metrology.views.data.summary")

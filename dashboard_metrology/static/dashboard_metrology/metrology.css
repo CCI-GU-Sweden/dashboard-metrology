@@ -11,3 +11,9 @@
 .metrology-score-panel{margin-top:1.5rem}
 [data-theme=dark] .metrology-card{background:#202d3b;border-color:#39485d}[data-theme=dark] .metrology-card-body p{color:#b5c1cf}
 @media(max-width:600px){.metrology-heading{align-items:flex-start;flex-direction:column}}
+.dashboard-content.metrology-page{max-width:none;width:100%;padding:1.5rem}
+.metrology-page [hidden]{display:none!important}
+.metrology-chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:1rem}
+.metrology-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
+.metrology-gallery img{width:100%;height:auto;max-height:500px;object-fit:contain;background:white;border-radius:6px}
+.metrology-controls{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin:1rem 0}

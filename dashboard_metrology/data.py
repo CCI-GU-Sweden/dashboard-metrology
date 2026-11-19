@@ -106,6 +106,61 @@ def history(microscope_id, lens_id=None, limit=5000):
     return list(reversed(rows[:limit])), len(rows) > limit
 
 
+def all_measurements(filters, page=1, page_size=50):
+    conditions = ["r.state='complete'"]
+    params = []
+    for name, column in (("microscope", "m.microscope_id"), ("lens", "m.lens_id"),
+                         ("category", "m.category"), ("status", "m.status")):
+        if filters.get(name):
+            conditions.append(f"{column}=%s")
+            params.append(filters[name])
+    if filters.get("search"):
+        conditions.append("(m.measurement_type ILIKE %s OR microscope.name ILIKE %s)")
+        term = '%' + filters['search'] + '%'
+        params.extend([term, term])
+    where = " AND ".join(conditions)
+    base = " FROM metrology_measurement m JOIN metrology_run r ON r.id=m.run_id JOIN metrology_microscope microscope ON microscope.id=m.microscope_id LEFT JOIN metrology_lens l ON l.id=m.lens_id "
+    total = _rows("SELECT count(*) AS total" + base + " WHERE " + where, params)[0]['total']
+    rows = _rows("""SELECT m.id,m.category,m.measurement_type,m.value,m.unit,m.status,m.acquired_at,
+        r.imported_at,r.processed_at,r.source,r.fileset_id,microscope.name AS microscope_name,
+        l.magnification,l.numerical_aperture,
+        (SELECT i.image_id FROM metrology_run_input i WHERE i.run_id=r.id
+         AND m.metric_key LIKE i.image_id::text || ':%%' LIMIT 1) AS image_id""" + base + " WHERE " + where +
+        " ORDER BY COALESCE(m.acquired_at,r.imported_at) DESC NULLS LAST,m.id DESC LIMIT %s OFFSET %s",
+        [*params, page_size, (page - 1) * page_size])
+    return rows, total
+
+
+def filter_options():
+    return {
+        'categories': _rows("SELECT DISTINCT category FROM metrology_measurement m JOIN metrology_run r ON r.id=m.run_id WHERE r.state='complete' ORDER BY category"),
+        'statuses': _rows("SELECT DISTINCT status FROM metrology_measurement m JOIN metrology_run r ON r.id=m.run_id WHERE r.state='complete' ORDER BY status"),
+        'lenses': _rows("SELECT l.id,l.magnification,l.numerical_aperture,m.name AS microscope_name FROM metrology_lens l JOIN metrology_microscope m ON m.id=l.microscope_id ORDER BY m.name,l.magnification,l.id"),
+    }
+
+
+def figures(microscope_id, lens_id, category):
+    # Figure index is the analysis-result index in both artifact_key and metric_key.
+    # Only show linked, browser-displayable figures associated with this category.
+    return _rows("""SELECT DISTINCT a.id,a.image_id,a.artifact_key,a.mime_type
+        FROM metrology_artifact a JOIN metrology_run r ON r.id=a.run_id AND r.state='complete'
+        JOIN metrology_measurement m ON m.run_id=a.run_id AND m.microscope_id=%s
+          AND m.lens_id=%s AND m.category=%s
+          AND split_part(m.metric_key,':',1)=a.image_id::text
+          AND a.artifact_key IN (a.image_id::text || '-figure-' || split_part(m.metric_key,':',2) || '.png',
+                                 a.image_id::text || '-psf-' || split_part(m.metric_key,':',2) || '.gif')
+        WHERE a.state='linked' AND a.mime_type IN ('image/png','image/jpeg','image/gif','image/webp')
+          AND a.payload IS NOT NULL ORDER BY a.id DESC LIMIT 36""", [microscope_id, lens_id, category])
+
+
+def figure_payload(artifact_id):
+    rows = _rows("""SELECT a.payload,a.mime_type FROM metrology_artifact a
+        JOIN metrology_run r ON r.id=a.run_id AND r.state='complete'
+        WHERE a.id=%s AND a.state='linked' AND a.payload IS NOT NULL
+        AND a.mime_type IN ('image/png','image/jpeg','image/gif','image/webp')""", [artifact_id])
+    return rows[0] if rows else None
+
+
 def failed_runs(page=1, page_size=50):
     # Present the most recent failure per source/fileset; hide superseded failures.
     base = """

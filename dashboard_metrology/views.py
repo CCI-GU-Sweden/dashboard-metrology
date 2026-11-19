@@ -96,14 +96,83 @@ def microscope(request, microscope_id):
                            "status": scoring.aggregate_status(value), "period_start": day,
                            "magnification": info_lens.get("magnification")})
         scores.sort(key=lambda row: row["period_start"], reverse=True)
+        lens_history = [{"lens_id": lens, "day": str(day), "score": value}
+                        for (_, lens, day), value in objectives.items()]
+        category_history = [{"lens_id": lens, "category": category, "day": str(day), "score": value}
+                            for (_, lens, category, day), value in categories.items()]
         return render(request, "dashboard_metrology/microscope.html", {
             "microscope": info, "lenses": lens_list, "lens_id": lens_id,
             "measurements": measurements, "scores": scores[:50],
+            "lens_history": lens_history, "category_history": category_history,
             "total": total, "page": page, "previous": page - 1 if page > 1 else None,
             "next": page + 1 if page * 50 < total else None,
         })
     except DatabaseError:
         return HttpResponse("Metrology data is currently unavailable.", status=503)
+
+
+@require_GET
+def measurements(request):
+    if not operational_access(request.user):
+        return HttpResponseForbidden("Staff access required.")
+    filters = {key: request.GET.get(key, '').strip()[:200] for key in ('microscope', 'lens', 'category', 'status', 'search')}
+    for key in ('microscope', 'lens'):
+        if filters[key] and (not filters[key].isascii() or not filters[key].isdigit() or len(filters[key]) > 18 or int(filters[key]) < 1):
+            return HttpResponse("Invalid filter.", status=400)
+    raw = request.GET.get('page', '1')
+    if len(raw) > 6 or not raw.isascii() or not raw.isdigit() or not 1 <= int(raw) <= 100000:
+        return HttpResponse("Invalid page.", status=400)
+    page = int(raw)
+    try:
+        rows, total = data.all_measurements(filters, page)
+        score_by_id = {row['id']: row['score'] for row in scoring.measurements()}
+        for item in rows:
+            item['omero_url'] = _omero_image_url(item['source'], item['image_id'])
+            item['score'] = score_by_id.get(item['id'])
+        query = request.GET.copy()
+        query.pop('page', None)
+        return render(request, 'dashboard_metrology/measurements.html', {
+            'measurements': rows, 'filters': filters, 'options': data.filter_options(),
+            'microscopes': data.microscopes(), 'total': total, 'page': page,
+            'previous': page - 1 if page > 1 else None,
+            'next': page + 1 if page * 50 < total else None, 'query': query.urlencode()})
+    except DatabaseError:
+        return HttpResponse("Metrology data is currently unavailable.", status=503)
+
+
+@require_GET
+def figures(request, microscope_id):
+    if not operational_access(request.user):
+        return JsonResponse({'error': 'Staff access required.'}, status=403)
+    lens = request.GET.get('lens', '')
+    category = request.GET.get('category', '')
+    if not lens.isascii() or not lens.isdigit() or len(lens) > 18 or int(lens) < 1 or not category or len(category) > 200:
+        return JsonResponse({'error': 'Invalid selection.'}, status=400)
+    try:
+        if not data.microscope(microscope_id) or not any(item['id'] == int(lens) for item in data.lenses(microscope_id)):
+            return JsonResponse({'error': 'Not found.'}, status=404)
+        items = data.figures(microscope_id, int(lens), category)
+        for item in items:
+            item['url'] = reverse('metrology_attachment', args=[item['id']])
+        return JsonResponse({'figures': items})
+    except DatabaseError:
+        return JsonResponse({'error': 'Metrology data is currently unavailable.'}, status=503)
+
+
+@require_GET
+def attachment(request, artifact_id):
+    if not operational_access(request.user):
+        return HttpResponseForbidden('Staff access required.')
+    try:
+        item = data.figure_payload(artifact_id)
+        if not item:
+            return HttpResponseNotFound('Figure not found.')
+        response = HttpResponse(bytes(item['payload']), content_type=item['mime_type'])
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['Cache-Control'] = 'private, max-age=300'
+        return response
+    except DatabaseError:
+        return HttpResponse('Metrology data is currently unavailable.', status=503)
 
 
 @require_GET

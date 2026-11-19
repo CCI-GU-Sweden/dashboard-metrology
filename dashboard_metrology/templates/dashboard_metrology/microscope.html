@@ -1,46 +1,32 @@
-{% extends 'base.html' %}{% load static tz %}
+{% extends 'base.html' %}{% load static %}
 {% block content %}
-<section class="dashboard-content">
+<section class="dashboard-content metrology-page">
   <a class="button is-light" href="{% url 'metrology_home' %}">← Metrology</a>
   <h1 class="title is-3 mt-4">{{ microscope.name }}</h1>
   {% if microscope.location %}<p>{{ microscope.location }}</p>{% endif %}
-  <h2 class="title is-5 mt-5">Scores</h2>
-  {% if scores %}
-  <div class="table-container"><table class="table is-fullwidth"><thead><tr><th>Date</th><th>Level</th><th>Measure</th><th>Lens</th><th>Score</th><th>Status</th></tr></thead><tbody>
-  {% for score in scores %}<tr><td>{{ score.period_start|date:'Y-m-d' }}</td><td>{{ score.level }}</td><td>{{ score.score_key }}</td><td>{{ score.magnification|default:'—' }}</td><td>{{ score.score|floatformat:2 }}</td><td>{{ score.status }}</td></tr>{% endfor %}
-  </tbody></table></div>
-  {% else %}<p class="small-note">No scores calculated yet.</p>{% endif %}
-  <h2 class="title is-5 mt-5">Measurement history</h2>
-  <div id="metrology-history" data-url="{% url 'metrology_history' microscope.id %}{% if lens_id %}?lens={{ lens_id }}{% endif %}">
-    <label for="history-metric">Measurement</label>
-    <span class="select"><select id="history-metric" disabled><option>Loading…</option></select></span>
-    <label for="history-mode" class="ml-3">Display</label>
-    <span class="select"><select id="history-mode"><option value="value">Measurement</option><option value="score">Score</option></select></span>
-    <p id="history-status" class="small-note" role="status">Loading measurement history…</p>
-    <div id="history-chart" style="width:100%;min-height:360px" aria-label="Interactive measurement history chart"></div>
+  <div class="box">
+    <h2 class="title is-5">Lens scores over time</h2>
+    <p class="small-note">Select a lens on the graph or using the selector to explore its categories.</p>
+    <div id="lens-chart" style="min-height:360px" aria-label="Lens score history"></div>
+    <div class="metrology-controls"><label for="lens-choice">Objective lens</label><span class="select"><select id="lens-choice"><option value="">Select a lens</option>{% for lens in lenses %}<option value="{{ lens.id }}" {% if lens.id == lens_id %}selected{% endif %}>{{ lens.magnification }}{% if lens.numerical_aperture != None %}, NA {{ lens.numerical_aperture }}{% endif %}</option>{% endfor %}</select></span>
+      <button class="button is-light" type="button" id="score-toggle" aria-expanded="false" aria-controls="score-table">Show score table</button></div>
+    <div id="score-table" hidden><div class="table-container"><table class="table is-fullwidth"><thead><tr><th>Date</th><th>Level</th><th>Category</th><th>Lens</th><th>Score</th><th>Status</th></tr></thead><tbody>
+    {% for score in scores %}<tr><td>{{ score.period_start|date:'Y-m-d' }}</td><td>{{ score.level }}</td><td>{{ score.score_key }}</td><td>{{ score.magnification|default:'—' }}</td><td>{{ score.score|floatformat:2 }}</td><td>{{ score.status }}</td></tr>{% empty %}<tr><td colspan="6">No scores calculated yet.</td></tr>{% endfor %}</tbody></table></div></div>
   </div>
-  <h2 class="title is-5 mt-5">Measurements</h2>
-  <form method="get" class="mb-4"><label for="lens">Objective lens</label>
-    <span class="select"><select id="lens" name="lens"><option value="">All lenses</option>
-    {% for lens in lenses %}<option value="{{ lens.id }}" {% if lens.id == lens_id %}selected{% endif %}>{{ lens.magnification }}{% if lens.numerical_aperture != None %}, NA {{ lens.numerical_aperture }}{% endif %}</option>{% endfor %}
-    </select></span> <button class="button" type="submit">Apply</button>
-  </form>
-  <p class="small-note">{{ total }} measurements. Dates use acquisition time where available; otherwise OMERO import time.</p>
-  <p class="small-note">Scores use configured thresholds when available; otherwise a ±10% range around the current median of at least three comparable measurements. Scores and references can change as new data arrives.</p>
-  {% if measurements %}<div class="table-container"><table class="table is-fullwidth is-hoverable">
-    <thead><tr><th>Acquisition date</th><th>Import date</th><th>Processing date</th><th>Lens</th><th>Category</th><th>Measurement</th><th>Value</th><th>Score</th><th>Status</th><th>OMERO</th></tr></thead><tbody>
-    {% for item in measurements %}{% timezone 'Europe/Stockholm' %}<tr><td>{{ item.acquired_at|date:'Y-m-d H:i'|default:'—' }}</td>
-      <td>{{ item.imported_at|date:'Y-m-d H:i'|default:'—' }}</td><td>{{ item.processed_at|date:'Y-m-d H:i'|default:'—' }}</td><td>{{ item.magnification|default:'—' }}{% if item.numerical_aperture != None %}, NA {{ item.numerical_aperture }}{% endif %}</td><td>{{ item.category }}</td><td>{{ item.measurement_type }}</td><td>{{ item.value|floatformat:3 }} {{ item.unit }}</td>
-      <td>{% if item.score != None %}{{ item.score|floatformat:2 }} ({{ item.score_status }}){% else %}Not scored{% endif %}</td><td>{{ item.status }}</td>
-      <td>{% if item.omero_url %}<a href="{{ item.omero_url }}" target="_blank" rel="noopener noreferrer">Open image</a>{% else %}—{% endif %}</td></tr>{% endtimezone %}{% endfor %}
-    </tbody></table></div>
-    <nav class="buttons" aria-label="Measurement pages">
-      {% if previous %}<a class="button" href="?page={{ previous }}{% if lens_id %}&amp;lens={{ lens_id }}{% endif %}">Previous</a>{% endif %}
-      <span class="button is-static">Page {{ page }}</span>
-      {% if next %}<a class="button" href="?page={{ next }}{% if lens_id %}&amp;lens={{ lens_id }}{% endif %}">Next</a>{% endif %}
-    </nav>
-  {% else %}<p>No measurements on this page.</p>{% endif %}
+  <div id="lens-detail" class="box" hidden>
+    <h2 class="title is-5">Category scores</h2><p class="small-note">Select a category on the graph or with the selector to see its measurements.</p>
+    <div id="category-chart" style="min-height:320px" aria-label="Category score history"></div>
+    <div class="metrology-controls"><label for="category-choice">Category</label><span class="select"><select id="category-choice"><option value="">Select a category</option></select></span></div>
+  </div>
+  <div id="category-detail" class="box" hidden><h2 class="title is-5" id="category-title">Measurements</h2>
+    <p id="detail-status" class="small-note" role="status"></p><div id="measurement-charts" class="metrology-chart-grid"></div>
+    <h3 class="title is-5 mt-5">Analysis figures</h3><p id="figure-status" class="small-note" role="status"></p><div id="figure-gallery" class="metrology-gallery"></div>
+  </div>
+  <p class="small-note">Scores use configured thresholds where available, otherwise a ±10% range around the current median of at least three comparable measurements. References and historical scores can change as data is added. Dates use acquisition time where available, otherwise import time.</p>
+  {{ lens_history|json_script:'lens-history-data' }}{{ category_history|json_script:'category-history-data' }}{{ lenses|json_script:'lens-data' }}
+  <div id="metrology-drilldown" data-history="{% url 'metrology_history' microscope.id %}" data-figures="{% url 'metrology_figures' microscope.id %}"></div>
 </section>
+<link rel="stylesheet" href="{% static 'dashboard_metrology/metrology.css' %}">
 <script src="{% static 'vendor/plotly/plotly.min.js' %}" defer></script>
-<script src="{% static 'dashboard_metrology/history.js' %}" defer></script>
+<script src="{% static 'dashboard_metrology/drilldown.js' %}" defer></script>
 {% endblock %}
