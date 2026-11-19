@@ -12,9 +12,9 @@
     return JSON.stringify([row.category, row.measurement_type, row.unit || '']);
   }
 
-  function buildTraces(rows, selected) {
+  function buildTraces(rows, selected, field = 'value') {
     const groups = new Map();
-    rows.filter(row => metricKey(row) === selected).forEach(row => {
+    rows.filter(row => metricKey(row) === selected && Number.isFinite(row[field])).forEach(row => {
       const key = row.lens_id == null ? 'unknown' : String(row.lens_id);
       if (!groups.has(key)) {
         const lens = row.magnification || 'No lens';
@@ -23,7 +23,7 @@
       }
       const trace = groups.get(key);
       trace.x.push(row.measured_at);
-      trace.y.push(row.value);
+      trace.y.push(row[field]);
       trace.text.push(escapeText(`${row.status || ''} · ${row.has_acquisition_time ? 'acquisition' : 'import'} time`));
     });
     return Array.from(groups.values()).map(trace => ({
@@ -39,6 +39,7 @@
   const container = document.getElementById('metrology-history');
   if (!container) return;
   const selector = document.getElementById('history-metric');
+  const mode = document.getElementById('history-mode');
   const status = document.getElementById('history-status');
   const chart = document.getElementById('history-chart');
 
@@ -78,17 +79,25 @@
           return;
         }
         const [, name, unit] = JSON.parse(selector.value);
+        const scoreMode = mode.value === 'score';
         const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-        Plotly.react(chart, buildTraces(rows, selector.value), {
+        const traces = buildTraces(rows, selector.value, scoreMode ? 'score' : 'value');
+        if (scoreMode && !traces.length) {
+          status.textContent = 'No score available: at least three comparable measurements or a configured threshold are needed.';
+        } else {
+          status.textContent = data.truncated ? 'Showing the most recent 5,000 dated measurements. Zoom and hover for details.' : 'Zoom, pan, and hover for details. Unspecified acquisition dates use import time.';
+        }
+        Plotly.react(chart, traces, {
           xaxis: {title: {text: 'Date'}, type: 'date'},
-          yaxis: {title: {text: escapeText(name + (unit ? ` (${unit})` : ''))}, automargin: true},
+          yaxis: {title: {text: scoreMode ? 'Score' : escapeText(name + (unit ? ` (${unit})` : ''))}, automargin: true, ...(scoreMode ? {range: [0, 1.05]} : {})},
           margin: {l: 70, r: 20, t: 20, b: 65},
           paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
           font: {color: dark ? '#e5e7eb' : '#243247'},
-          legend: {orientation: 'h'}, uirevision: selector.value
+          legend: {orientation: 'h'}, uirevision: selector.value + mode.value
         }, {responsive: true, displaylogo: false});
       }
       selector.addEventListener('change', draw);
+      mode.addEventListener('change', draw);
       draw();
     })
     .catch(() => { status.textContent = 'Unable to load measurement history. The table below remains available.'; });

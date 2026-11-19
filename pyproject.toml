@@ -13,5 +13,8 @@ license = "MIT"
 [tool.setuptools.packages.find]
 include = ["dashboard_metrology*"]
 
+[tool.setuptools]
+license-files = ["LICENSE", "METEOR_VIEW_LICENSE"]
+
 [tool.setuptools.package-data]
-dashboard_metrology = ["templates/dashboard_metrology/*.html", "static/dashboard_metrology/*.js"]
+dashboard_metrology = ["templates/dashboard_metrology/*.html", "static/dashboard_metrology/*.js", "static/dashboard_metrology/*.css", "static/dashboard_metrology/images/*.png"]

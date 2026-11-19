@@ -35,12 +35,13 @@ test('renders a chart and lets the user switch metrics', async () => {
       append(option) { this.options.push(option); if (this.options.length === 1) this.value = option.value; },
       addEventListener(type, callback) { this.listeners[type] = callback; }
     },
-    'history-status': {textContent: ''}, 'history-chart': {}
+    'history-status': {textContent: ''}, 'history-chart': {},
+    'history-mode': {value: 'value', listeners: {}, addEventListener(type, callback) { this.listeners[type] = callback; }}
   };
   const plots = [];
   const rows = [
     {category: 'PSF', measurement_type: 'X', unit: 'µm', lens_id: 1, value: 1, measured_at: '2025-01-01'},
-    {category: 'PSF', measurement_type: 'Y', unit: 'µm', lens_id: 1, value: 2, measured_at: '2025-01-01'}
+    {category: 'PSF', measurement_type: 'Y', unit: 'µm', lens_id: 1, value: 2, score: 0.8, measured_at: '2025-01-01'}
   ];
   const plotly = {react: (element, traces) => plots.push(traces)};
   const context = {
@@ -58,4 +59,7 @@ test('renders a chart and lets the user switch metrics', async () => {
   elements['history-metric'].listeners.change();
   assert.equal(plots.length, 2);
   assert.equal(plots[1][0].y[0], 2);
+  elements['history-mode'].value = 'score';
+  elements['history-mode'].listeners.change();
+  assert.equal(plots[2][0].y[0], 0.8);
 });

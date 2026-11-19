@@ -6,7 +6,9 @@ from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.urls import reverse
 
-from . import views
+from datetime import datetime, timezone
+
+from . import views, scoring
 from .dashboard_module import module, overview_metrics
 
 
@@ -17,6 +19,9 @@ class ViewerTests(SimpleTestCase):
         self.admin = SimpleNamespace(is_authenticated=True, is_active=True, role="admin")
         self.researcher = SimpleNamespace(is_authenticated=True, is_active=True, role="researcher")
         self.anonymous = SimpleNamespace(is_authenticated=False, is_active=False, role="")
+        scoring = patch("dashboard_metrology.views.scoring.measurements", return_value=[])
+        scoring.start()
+        self.addCleanup(scoring.stop)
 
     def request(self, path, user):
         request = self.factory.get(path)
@@ -30,6 +35,19 @@ class ViewerTests(SimpleTestCase):
         self.assertFalse(module.can_view(self.anonymous))
         with patch("dashboard_metrology.dashboard_module.summary", return_value={"microscopes": 2, "measurements": 5, "failures": 1}):
             self.assertEqual(overview_metrics(self.staff)[1]["value"], "5")
+
+    @patch("dashboard_metrology.views.data.microscopes")
+    @patch("dashboard_metrology.views.data.summary")
+    @patch("dashboard_metrology.views.scoring.measurements")
+    def test_home_renders_live_score_and_safe_icon(self, measures, summary, microscopes):
+        day = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        measures.return_value = [{"microscope_id": 1, "lens_id": 2, "category": "PSF", "score": 0.8, "measured_at": day}]
+        summary.return_value = {"microscopes": 1, "measurements": 1, "failures": 0}
+        microscopes.return_value = [{"id": 1, "name": "LSM980", "location": None, "lens_count": 1, "measurement_count": 1, "last_measurement": day}]
+        response = views.home(self.request("/metrology/", self.staff))
+        self.assertContains(response, "80%")
+        self.assertContains(response, "LSM980.png")
+        self.assertContains(response, 'id="metrology-score-history"', html=False)
 
     def test_direct_views_deny_non_staff(self):
         for user in (self.researcher, self.anonymous, SimpleNamespace(is_authenticated=True, is_active=False, role="staff")):
@@ -50,7 +68,7 @@ class ViewerTests(SimpleTestCase):
         microscopes.return_value = []
         self.assertContains(views.home(self.request("/metrology/", self.staff)), "No microscope measurements")
 
-    @patch("dashboard_metrology.views.data.summary", side_effect=DatabaseError)
+    @patch("dashboard_metrology.views.data.microscopes", side_effect=DatabaseError)
     def test_database_unavailable_is_503(self, _):
         self.assertEqual(views.home(self.request("/metrology/", self.staff)).status_code, 503)
 
@@ -78,7 +96,7 @@ class ViewerTests(SimpleTestCase):
         self.assertEqual(reverse("metrology_history", args=[42]), "/metrology/microscopes/42/history/")
         self.assertEqual(reverse("metrology_failures"), "/metrology/review/")
 
-    @patch("dashboard_metrology.views.data.history", return_value=([{"measurement_type": "PSF X", "value": 0.4}], False))
+    @patch("dashboard_metrology.views.data.history", return_value=([{"id": 1, "measurement_type": "PSF X", "value": 0.4}], False))
     @patch("dashboard_metrology.views.data.lenses", return_value=[{"id": 2}])
     @patch("dashboard_metrology.views.data.microscope", return_value={"id": 1})
     def test_history_filters_authorization_and_data(self, microscope, lenses, history):
@@ -100,3 +118,26 @@ class ViewerTests(SimpleTestCase):
     @patch("dashboard_metrology.views.data.microscope", side_effect=DatabaseError)
     def test_history_unavailable(self, _):
         self.assertEqual(views.history(self.request("/metrology/microscopes/1/history/", self.staff), 1).status_code, 503)
+
+
+class ScoreAggregationTests(SimpleTestCase):
+    def test_category_medians_then_lens_and_microscope_means(self):
+        day = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        rows = [
+            {"microscope_id": 1, "lens_id": 1, "category": "PSF", "score": x, "measured_at": day}
+            for x in (0.1, 0.8, 0.9)
+        ] + [
+            {"microscope_id": 1, "lens_id": 1, "category": "Field", "score": 0.4, "measured_at": day},
+            {"microscope_id": 1, "lens_id": 2, "category": "PSF", "score": 1.0, "measured_at": day},
+            {"microscope_id": 1, "lens_id": 2, "category": "PSF", "score": 0.0, "measured_at": None},
+        ]
+        categories, lenses, microscopes = scoring.aggregate(rows)
+        self.assertAlmostEqual(categories[(1, 1, "PSF", day.date())], 0.8)
+        self.assertAlmostEqual(lenses[(1, 1, day.date())], 0.6)
+        self.assertAlmostEqual(microscopes[(1, day.date())], 0.8)
+        self.assertEqual(scoring.latest_by_microscope(rows)[1]["status"], "success")
+
+    def test_aggregate_status_boundaries(self):
+        self.assertEqual(scoring.aggregate_status(0.7), "success")
+        self.assertEqual(scoring.aggregate_status(0.4), "warning")
+        self.assertEqual(scoring.aggregate_status(0.39), "critical")

@@ -1,0 +1,13 @@
+.metrology-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:1.5rem 0}
+.metrology-heading .title{margin-bottom:.35rem}
+.metrology-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin:1.5rem 0}
+.metrology-card{display:flex;align-items:center;gap:1rem;padding:1rem;border:1px solid #dce5ed;border-radius:12px;background:var(--card-bg,#fff);color:inherit;text-decoration:none;box-shadow:0 2px 10px rgba(25,50,75,.07);transition:transform .15s,box-shadow .15s}
+.metrology-card:hover{color:inherit;transform:translateY(-3px);box-shadow:0 6px 18px rgba(25,50,75,.15)}
+.metrology-card img{width:68px;height:68px;object-fit:contain;flex:none}
+.metrology-card-body h2{font-weight:700;font-size:1.1rem;margin-bottom:.25rem}
+.metrology-card-body p{font-size:.82rem;color:#64748b;margin:.3rem 0}
+.metrology-badge{display:inline-block;border-radius:999px;padding:.2rem .6rem;font-size:.8rem;font-weight:700}
+.metrology-success{background:#d9f3e7;color:#147349}.metrology-warning{background:#fff1d0;color:#885900}.metrology-critical{background:#ffe2e2;color:#9b2929}.metrology-unscored{background:#e9eef3;color:#506071}
+.metrology-score-panel{margin-top:1.5rem}
+[data-theme=dark] .metrology-card{background:#202d3b;border-color:#39485d}[data-theme=dark] .metrology-card-body p{color:#b5c1cf}
+@media(max-width:600px){.metrology-heading{align-items:flex-start;flex-direction:column}}

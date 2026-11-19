@@ -4,10 +4,22 @@ from django.conf import settings
 from django.db import DatabaseError
 from django.http import HttpResponse, HttpResponseForbidden, HttpResponseNotFound, JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from accounts.permissions import operational_access
-from . import data
+from . import data, scoring
+
+
+def _image_for_microscope(name):
+    normalized = "".join(ch for ch in name.lower() if ch.isalnum())
+    for key, image in (("lsm980", "LSM980.png"), ("lsm880", "LSM880.png"),
+                       ("lsm710", "LSM710.png"), ("lsm700", "LSM700.png"),
+                       ("elyra7", "ELYRA7.png"), ("observer", "Observer.png"),
+                       ("imager", "Imager.png"), ("cd7", "CD7.png")):
+        if key in normalized:
+            return image
+    return "Microscope.png"
 
 
 def _omero_image_url(source, image_id):
@@ -25,7 +37,17 @@ def home(request):
     if not operational_access(request.user):
         return HttpResponseForbidden("Staff access required.")
     try:
-        return render(request, "dashboard_metrology/home.html", {"summary": data.summary(), "microscopes": data.microscopes()})
+        rows = scoring.measurements()
+        latest = scoring.latest_by_microscope(rows)
+        microscopes = data.microscopes()
+        for item in microscopes:
+            item["image"] = _image_for_microscope(item["name"])
+            item["latest_score"] = latest.get(item["id"])
+        _, _, scores = scoring.aggregate(rows)
+        score_history = [{"microscope_id": microscope, "day": str(day), "score": score}
+                         for (microscope, day), score in sorted(scores.items())]
+        chart_data = [{"id": item["id"], "name": item["name"], "url": reverse("metrology_microscope", args=[item["id"]])} for item in microscopes]
+        return render(request, "dashboard_metrology/home.html", {"summary": data.summary(), "microscopes": microscopes, "score_history": score_history, "microscope_chart_data": chart_data})
     except DatabaseError:
         return HttpResponse("Metrology data is currently unavailable.", status=503)
 
@@ -50,11 +72,33 @@ def microscope(request, microscope_id):
             return HttpResponse("Invalid page.", status=400)
         page = int(page_raw)
         measurements, total = data.measurements(microscope_id, lens_id, page)
+        scored = scoring.measurements(microscope_id)
+        score_by_id = {row["id"]: row for row in scored}
         for item in measurements:
             item["omero_url"] = _omero_image_url(item["source"], item["image_id"])
+            item["score"] = score_by_id.get(item["id"], {}).get("score")
+            item["score_status"] = scoring.status(item["score"])
+        categories, objectives, microscopes = scoring.aggregate(scored)
+        lens_lookup = {lens["id"]: lens for lens in lens_list}
+        scores = []
+        for (mid, lens, day), value in objectives.items():
+            if lens_id is not None and lens != lens_id:
+                continue
+            info_lens = lens_lookup.get(lens, {})
+            scores.append({"level": "lens", "score_key": "Overall", "score": value,
+                           "status": scoring.aggregate_status(value), "period_start": day,
+                           "magnification": info_lens.get("magnification")})
+        for (mid, lens, category, day), value in categories.items():
+            if lens_id is not None and lens != lens_id:
+                continue
+            info_lens = lens_lookup.get(lens, {})
+            scores.append({"level": "category", "score_key": category, "score": value,
+                           "status": scoring.aggregate_status(value), "period_start": day,
+                           "magnification": info_lens.get("magnification")})
+        scores.sort(key=lambda row: row["period_start"], reverse=True)
         return render(request, "dashboard_metrology/microscope.html", {
             "microscope": info, "lenses": lens_list, "lens_id": lens_id,
-            "measurements": measurements, "scores": data.latest_scores(microscope_id),
+            "measurements": measurements, "scores": scores[:50],
             "total": total, "page": page, "previous": page - 1 if page > 1 else None,
             "next": page + 1 if page * 50 < total else None,
         })
@@ -76,6 +120,9 @@ def history(request, microscope_id):
         if lens_id is not None and not any(lens["id"] == lens_id for lens in data.lenses(microscope_id)):
             return JsonResponse({"error": "Lens not found."}, status=404)
         rows, truncated = data.history(microscope_id, lens_id)
+        scored = {row["id"]: row["score"] for row in scoring.measurements(microscope_id)}
+        for row in rows:
+            row["score"] = scored.get(row["id"])
         return JsonResponse({"measurements": rows, "truncated": truncated})
     except DatabaseError:
         return JsonResponse({"error": "Metrology data is currently unavailable."}, status=503)

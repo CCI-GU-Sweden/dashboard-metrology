@@ -1,23 +1,29 @@
-{% extends 'base.html' %}
+{% extends 'base.html' %}{% load static %}
 {% block content %}
-<section class="dashboard-content">
+<section class="dashboard-content metrology-page">
   <a class="button is-light" href="{% url 'home' %}">← Overview</a>
-  <h1 class="title is-3 mt-4">Metrology</h1>
-  <p class="subtitle is-6">Microscope performance measurements from OMERO</p>
-  <div class="columns is-multiline">
-    <div class="column"><div class="box"><p>Microscopes</p><strong>{{ summary.microscopes }}</strong></div></div>
-    <div class="column"><div class="box"><p>Measurements</p><strong>{{ summary.measurements }}</strong></div></div>
-    <div class="column"><div class="box"><p><a href="{% url 'metrology_failures' %}">Filesets needing attention</a></p><strong>{{ summary.failures }}</strong></div></div>
+  <div class="metrology-heading"><div><p class="eyebrow">Microscope health</p><h1 class="title is-3">Metrology</h1><p>Explore measurements and performance over time.</p></div>
+    <a class="button is-light" href="{% url 'metrology_failures' %}">Needs attention <strong class="ml-2">{{ summary.failures }}</strong></a></div>
+  <div class="metrology-cards">
+    {% for microscope in microscopes %}
+    <a class="metrology-card" href="{% url 'metrology_microscope' microscope.id %}">
+      <img src="{% static 'dashboard_metrology/images/' %}{{ microscope.image }}" alt="" loading="lazy">
+      <div class="metrology-card-body"><h2>{{ microscope.name }}</h2><p>{{ microscope.lens_count }} lenses · {{ microscope.measurement_count }} measurements</p>
+        {% if microscope.latest_score %}<span class="metrology-badge metrology-{{ microscope.latest_score.status }}">{% widthratio microscope.latest_score.score 1 100 %}% · {{ microscope.latest_score.status }}</span><p>Latest: {{ microscope.latest_score.day|date:'Y-m-d' }}</p>
+        {% else %}<span class="metrology-badge metrology-unscored">Not scored yet</span>{% endif %}</div>
+    </a>
+    {% empty %}<p>No microscope measurements are available yet.</p>{% endfor %}
   </div>
-  <h2 class="title is-5">Microscopes</h2>
-  {% if microscopes %}
-  <div class="table-container"><table class="table is-fullwidth is-hoverable">
-    <thead><tr><th>Microscope</th><th>Lenses</th><th>Measurements</th><th>Latest data</th></tr></thead>
-    <tbody>{% for microscope in microscopes %}
-      <tr><td><a href="{% url 'metrology_microscope' microscope.id %}">{{ microscope.name }}</a>{% if microscope.location %}<br><span class="small-note">{{ microscope.location }}</span>{% endif %}</td>
-      <td>{{ microscope.lens_count }}</td><td>{{ microscope.measurement_count }}</td><td>{{ microscope.last_measurement|date:'Y-m-d H:i'|default:'—' }}</td></tr>
-    {% endfor %}</tbody>
-  </table></div>
-  {% else %}<p>No microscope measurements are available yet.</p>{% endif %}
+  <div class="box metrology-score-panel"><h2 class="title is-5">Microscope scores over time</h2>
+    <p class="small-note">Select a microscope card to explore its lenses and measurements. Zoom and hover on the graph.</p>
+    <p id="score-chart-status" class="small-note" role="status"></p>
+    <div id="score-chart" style="min-height:340px" aria-label="Interactive microscope score history"></div>
+  </div>
+  <p class="small-note">Scores are calculated from available completed measurements. Where no configured threshold exists, the reference is the current median of at least three comparable measurements, with a ±10% range; references and historical scores can change as data is added. The graph uses acquisition time when available, otherwise import time.</p>
+  {{ score_history|json_script:'metrology-score-history' }}
+  {{ microscope_chart_data|json_script:'metrology-microscope-data' }}
 </section>
+<link rel="stylesheet" href="{% static 'dashboard_metrology/metrology.css' %}">
+<script src="{% static 'vendor/plotly/plotly.min.js' %}" defer></script>
+<script src="{% static 'dashboard_metrology/scores.js' %}" defer></script>
 {% endblock %}
