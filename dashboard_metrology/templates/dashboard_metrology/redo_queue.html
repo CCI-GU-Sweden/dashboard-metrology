@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% block content %}
+<section class="dashboard-content metrology-page">
+  <a class="button is-light" href="{% url 'metrology_home' %}">← Metrology</a>
+  <h1 class="title is-3 mt-4">Fileset REDO queue</h1>
+  <p class="small-note">The daily processor handles queued filesets first, within its ten-fileset limit. The previous successful results stay visible until reprocessing succeeds. The last 100 requests are shown.</p>
+  <div class="table-container"><table class="table is-fullwidth"><thead><tr><th>Fileset</th><th>Source</th><th>Requested</th><th>Requested by (user ID)</th><th>Status</th><th>Attempts</th><th>Details</th></tr></thead><tbody>
+  {% for item in requests %}<tr><td>{{ item.fileset_id }}</td><td>{{ item.source }}</td><td>{{ item.requested_at|date:'Y-m-d H:i' }}</td><td>{{ item.requested_by }}</td><td>{{ item.state }}</td><td>{{ item.attempt_count|default:'—' }}</td><td>{{ item.error_message|default:'—' }}</td></tr>{% empty %}<tr><td colspan="7">No REDO requests yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>{% endblock %}

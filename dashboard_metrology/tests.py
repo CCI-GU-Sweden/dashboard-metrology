@@ -59,6 +59,23 @@ class ViewerTests(SimpleTestCase):
             self.assertEqual(views.figures(self.request("/metrology/microscopes/1/figures/", user), 1).status_code, 403)
             self.assertEqual(views.attachment(self.request("/metrology/attachments/1/", user), 1).status_code, 403)
 
+    @patch('dashboard_metrology.views.data.enqueue_redo', return_value='queued')
+    def test_redo_requires_admin_post_and_queues_measurement(self, enqueue):
+        self.assertEqual(views.redo(self.request('/metrology/measurements/4/redo/', self.admin), 4).status_code, 405)
+        request = self.factory.post('/metrology/measurements/4/redo/')
+        request.user = self.staff
+        self.assertEqual(views.redo(request, 4).status_code, 403)
+        request.user = SimpleNamespace(is_authenticated=True, is_active=True, role='admin', id=42)
+        self.assertEqual(views.redo(request, 4).status_code, 302)
+        enqueue.assert_called_once_with(4, 42)
+        enqueue.return_value = 'not_found'
+        self.assertEqual(views.redo(request, 99).status_code, 404)
+
+    @patch('dashboard_metrology.views.data.redo_requests', return_value=[])
+    def test_redo_queue_staff_access(self, requests):
+        self.assertContains(views.redo_queue(self.request('/metrology/redo/', self.staff)), 'No REDO requests yet')
+        self.assertEqual(views.redo_queue(self.request('/metrology/redo/', self.researcher)).status_code, 403)
+
     @patch("dashboard_metrology.views.data.figure_payload")
     def test_image_attachment_returns_safe_content_type_and_missing_is_404(self, payload):
         payload.return_value = {"payload": b"example", "mime_type": "image/png"}

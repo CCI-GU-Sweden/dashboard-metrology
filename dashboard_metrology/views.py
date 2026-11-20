@@ -3,11 +3,11 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.db import DatabaseError
 from django.http import HttpResponse, HttpResponseForbidden, HttpResponseNotFound, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.urls import reverse
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 
-from accounts.permissions import operational_access
+from accounts.permissions import operational_access, is_dashboard_admin
 from . import data, scoring
 
 
@@ -135,9 +135,33 @@ def measurements(request):
             'measurements': rows, 'filters': filters, 'options': data.filter_options(),
             'microscopes': data.microscopes(), 'total': total, 'page': page,
             'previous': page - 1 if page > 1 else None,
-            'next': page + 1 if page * 50 < total else None, 'query': query.urlencode()})
+            'next': page + 1 if page * 50 < total else None, 'query': query.urlencode(),
+            'can_redo': is_dashboard_admin(request.user)})
     except DatabaseError:
         return HttpResponse("Metrology data is currently unavailable.", status=503)
+
+
+@require_POST
+def redo(request, measurement_id):
+    if not is_dashboard_admin(request.user):
+        return HttpResponseForbidden('Administrator access required.')
+    try:
+        outcome = data.enqueue_redo(measurement_id, request.user.id)
+        if outcome == 'not_found':
+            return HttpResponseNotFound('Current measurement not found.')
+        return redirect('metrology_redo_queue')
+    except DatabaseError:
+        return HttpResponse('Metrology data is currently unavailable.', status=503)
+
+
+@require_GET
+def redo_queue(request):
+    if not operational_access(request.user):
+        return HttpResponseForbidden('Staff access required.')
+    try:
+        return render(request, 'dashboard_metrology/redo_queue.html', {'requests': data.redo_requests()})
+    except DatabaseError:
+        return HttpResponse('Metrology data is currently unavailable.', status=503)
 
 
 @require_GET

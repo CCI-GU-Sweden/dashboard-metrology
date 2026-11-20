@@ -22,6 +22,26 @@ CONFIG = "v1"
 
 def claim(db, source, group_id, fileset_id, imported_ms):
     with db.transaction():
+        redo = db.execute("SELECT id,run_id FROM public.metrology_redo_request WHERE source=%s AND fileset_id=%s AND state IN ('pending','running') FOR UPDATE", (source, fileset_id)).fetchone()
+        if redo:
+            request_id, run_id = redo
+            if run_id is None:
+                imported = datetime.fromtimestamp(imported_ms / 1000, timezone.utc) if imported_ms is not None else None
+                generation = db.execute("SELECT COALESCE(max(generation),0)+1 FROM public.metrology_run WHERE source=%s AND fileset_id=%s", (source, fileset_id)).fetchone()[0]
+                run_id = db.execute("INSERT INTO public.metrology_run(source,group_id,fileset_id,analysis_version,config_hash,generation,state,attempt_count,imported_at) VALUES(%s,%s,%s,%s,%s,%s,'running',1,%s) RETURNING id", (source, group_id, fileset_id, VERSION, CONFIG, generation, imported)).fetchone()[0]
+                db.execute("UPDATE public.metrology_redo_request SET run_id=%s,state='running',updated_at=now() WHERE id=%s", (run_id, request_id))
+                return run_id
+            row = db.execute("SELECT state,attempt_count FROM public.metrology_run WHERE id=%s FOR UPDATE", (run_id,)).fetchone()
+            if row[0] == 'complete':
+                db.execute("UPDATE public.metrology_redo_request SET state='complete',updated_at=now() WHERE id=%s", (request_id,))
+                return None
+            if row[1] >= 3:
+                db.execute("UPDATE public.metrology_run SET state='permanent_failure',error_message=COALESCE(error_message,'Retry limit reached after interrupted run'),updated_at=now() WHERE id=%s", (run_id,))
+                db.execute("UPDATE public.metrology_redo_request SET state='failed',error_message='Retry limit reached',updated_at=now() WHERE id=%s", (request_id,))
+                return None
+            db.execute("UPDATE public.metrology_run SET state='running',attempt_count=attempt_count+1,updated_at=now() WHERE id=%s", (run_id,))
+            db.execute("UPDATE public.metrology_redo_request SET state='running',updated_at=now() WHERE id=%s", (request_id,))
+            return run_id
         if db.execute("SELECT EXISTS(SELECT 1 FROM public.metrology_run WHERE source=%s AND fileset_id=%s AND state='complete')", (source, fileset_id)).fetchone()[0]:
             return None
         row = db.execute("SELECT id, state, attempt_count FROM public.metrology_run WHERE source=%s AND fileset_id=%s AND analysis_version=%s AND config_hash=%s AND generation=1 FOR UPDATE", (source, fileset_id, VERSION, CONFIG)).fetchone()
@@ -74,6 +94,7 @@ def upload_artifacts(db, connection, run_id):
             db.execute("UPDATE public.metrology_artifact SET state='linked',annotation_id=%s WHERE id=%s", (annotation_id, artifact_id))
     with db.transaction():
         db.execute("UPDATE public.metrology_run SET state='complete',error_message=NULL,processed_at=now(),updated_at=now() WHERE id=%s", (run_id,))
+        db.execute("UPDATE public.metrology_redo_request SET state='complete',error_message=NULL,updated_at=now() WHERE run_id=%s AND state='running'", (run_id,))
 
 
 def run(limit):
@@ -86,11 +107,14 @@ def run(limit):
         if not db.execute("SELECT pg_try_advisory_lock(%s)", (730625103,)).fetchone()[0]:
             LOG.info("Another metrology processor is running")
             return 0
-        if db.execute("SELECT max(version) FROM public.metrology_schema_version").fetchone()[0] != 4:
-            raise RuntimeError("Schema version 4 is required")
+        if db.execute("SELECT max(version) FROM public.metrology_schema_version").fetchone()[0] != 5:
+            raise RuntimeError("Schema version 5 is required")
         connection = connect()
         selected = failures = 0
-        for fileset_id, imported, image_ids in filesets(connection):
+        queued = {row[0] for row in db.execute("SELECT fileset_id FROM public.metrology_redo_request WHERE source=%s AND state IN ('pending','running')", (source,)).fetchall()}
+        available = filesets(connection)
+        available.sort(key=lambda item: item[0] not in queued)
+        for fileset_id, imported, image_ids in available:
             if selected >= limit:
                 break
             run_id = claim(db, source, group_id, fileset_id, imported)
@@ -107,7 +131,9 @@ def run(limit):
             except Exception as exc:
                 failures += 1
                 LOG.exception("Fileset %s failed", fileset_id)
-                db.execute("UPDATE public.metrology_run SET state=CASE WHEN attempt_count >= 3 THEN 'permanent_failure' ELSE 'retryable_failure' END,error_message=%s,updated_at=now() WHERE id=%s", (str(exc)[:2000], run_id))
+                with db.transaction():
+                    db.execute("UPDATE public.metrology_run SET state=CASE WHEN attempt_count >= 3 THEN 'permanent_failure' ELSE 'retryable_failure' END,error_message=%s,updated_at=now() WHERE id=%s", (str(exc)[:2000], run_id))
+                    db.execute("UPDATE public.metrology_redo_request SET state=CASE WHEN (SELECT attempt_count FROM public.metrology_run WHERE id=%s) >= 3 THEN 'failed' ELSE 'pending' END,error_message=%s,updated_at=now() WHERE run_id=%s AND state='running'", (run_id, str(exc)[:2000], run_id))
         LOG.info("Attempted %s filesets; %s failed", selected, failures)
         return 1 if failures else 0
     finally:

@@ -21,7 +21,7 @@ def measurements(microscope_id=None):
                    l.magnification, l.numerical_aperture,
                    COALESCE(m.acquired_at, r.imported_at) AS measured_at
             FROM metrology_measurement m
-            JOIN metrology_run r ON r.id=m.run_id AND r.state='complete'
+            JOIN metrology_current_run r ON r.id=m.run_id AND r.state='complete'
             JOIN metrology_lens l ON l.id=m.lens_id
             WHERE l.numerical_aperture IS NOT NULL
               AND lower(m.status) NOT IN ('ignore','ignored','error','failed','failure')
