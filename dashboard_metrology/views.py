@@ -1,4 +1,5 @@
 from urllib.parse import urlsplit
+import math
 
 from django.conf import settings
 from django.db import DatabaseError
@@ -154,6 +155,53 @@ def redo(request, measurement_id):
         return HttpResponse('Metrology data is currently unavailable.', status=503)
 
 
+@require_POST
+def redo_failed(request, run_id):
+    if not is_dashboard_admin(request.user):
+        return HttpResponseForbidden('Administrator access required.')
+    try:
+        if data.enqueue_failed_redo(run_id, request.user.id) == 'not_found':
+            return HttpResponseNotFound('Failed fileset not found.')
+        return redirect('metrology_redo_queue')
+    except DatabaseError:
+        return HttpResponse('Metrology data is currently unavailable.', status=503)
+
+
+@require_GET
+def thresholds(request):
+    if not operational_access(request.user):
+        return HttpResponseForbidden('Staff access required.')
+    try:
+        rows = data.threshold_options()
+        for row in rows:
+            median = row['median']
+            row['display_expected'] = row['expected_value'] if row['threshold_id'] else median
+            row['display_lower'] = row['lower_bound'] if row['threshold_id'] else median - abs(median) * 0.1
+            row['display_upper'] = row['upper_bound'] if row['threshold_id'] else median + abs(median) * 0.1
+        return render(request, 'dashboard_metrology/thresholds.html', {
+            'thresholds': rows, 'can_edit': is_dashboard_admin(request.user)})
+    except DatabaseError:
+        return HttpResponse('Metrology data is currently unavailable.', status=503)
+
+
+@require_POST
+def threshold_save(request, measurement_id):
+    if not is_dashboard_admin(request.user):
+        return HttpResponseForbidden('Administrator access required.')
+    try:
+        expected, lower, upper = (float(request.POST.get(key, '')) for key in ('expected', 'lower', 'upper'))
+    except (TypeError, ValueError, OverflowError):
+        return HttpResponse('Enter finite numeric values for expected, lower and upper.', status=400)
+    if not all(math.isfinite(value) for value in (expected, lower, upper)) or not lower <= expected <= upper:
+        return HttpResponse('Bounds must be finite and satisfy lower ≤ expected ≤ upper.', status=400)
+    try:
+        if not data.save_threshold(measurement_id, request.user.id, expected, lower, upper):
+            return HttpResponseNotFound('Current measurement or calibrated lens not found.')
+        return redirect('metrology_thresholds')
+    except DatabaseError:
+        return HttpResponse('Metrology data is currently unavailable.', status=503)
+
+
 @require_GET
 def redo_queue(request):
     if not operational_access(request.user):
@@ -231,8 +279,12 @@ def failures(request):
     page = int(raw)
     try:
         rows, total = data.failed_runs(page)
+        for row in rows:
+            row['omero_images'] = [{'id': image_id, 'url': _omero_image_url(row['source'], image_id)}
+                                   for image_id in (row.get('source_image_ids') or [])]
         return render(request, "dashboard_metrology/failures.html", {
             "failures": rows, "total": total, "page": page,
+            "can_redo": is_dashboard_admin(request.user),
             "previous": page - 1 if page > 1 else None,
             "next": page + 1 if page * 50 < total else None,
         })

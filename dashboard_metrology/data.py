@@ -142,8 +142,8 @@ def all_measurements(filters, page=1, page_size=50):
 
 
 def enqueue_redo(measurement_id, actor_id):
-    rows = _rows("""INSERT INTO metrology_redo_request(source,fileset_id,measurement_id,requested_by)
-        SELECT r.source,r.fileset_id,m.id,%s FROM metrology_measurement m
+    rows = _rows("""INSERT INTO metrology_redo_request(source,fileset_id,measurement_id,requested_by,requested_run_id)
+        SELECT r.source,r.fileset_id,m.id,%s,r.id FROM metrology_measurement m
         JOIN metrology_current_run r ON r.id=m.run_id WHERE m.id=%s
         ON CONFLICT DO NOTHING RETURNING id""", [actor_id, measurement_id])
     if rows:
@@ -151,6 +151,72 @@ def enqueue_redo(measurement_id, actor_id):
     exists = _rows("""SELECT EXISTS(SELECT 1 FROM metrology_measurement m
         JOIN metrology_current_run r ON r.id=m.run_id WHERE m.id=%s) AS present""", [measurement_id])[0]['present']
     return 'already_queued' if exists else 'not_found'
+
+
+def enqueue_failed_redo(run_id, actor_id):
+    rows = _rows("""INSERT INTO metrology_redo_request(source,fileset_id,measurement_id,requested_by,requested_run_id)
+        SELECT r.source,r.fileset_id,NULL,%s,r.id FROM metrology_run r
+        WHERE r.id=%s AND r.state IN ('retryable_failure','permanent_failure')
+          AND NOT EXISTS (SELECT 1 FROM metrology_current_run done WHERE done.source=r.source AND done.fileset_id=r.fileset_id)
+          AND NOT EXISTS (SELECT 1 FROM metrology_run newer WHERE newer.source=r.source AND newer.fileset_id=r.fileset_id
+                          AND newer.id>r.id AND newer.state IN ('retryable_failure','permanent_failure'))
+        ON CONFLICT DO NOTHING RETURNING id""", [actor_id, run_id])
+    if rows:
+        return 'queued'
+    exists = _rows("""SELECT EXISTS(SELECT 1 FROM metrology_run r WHERE r.id=%s
+       AND r.state IN ('retryable_failure','permanent_failure') AND NOT EXISTS
+       (SELECT 1 FROM metrology_current_run done WHERE done.source=r.source AND done.fileset_id=r.fileset_id)
+       AND NOT EXISTS (SELECT 1 FROM metrology_run newer WHERE newer.source=r.source AND newer.fileset_id=r.fileset_id
+                       AND newer.id>r.id AND newer.state IN ('retryable_failure','permanent_failure'))) AS present""", [run_id])[0]['present']
+    return 'already_queued' if exists else 'not_found'
+
+
+def threshold_options():
+    return _rows("""WITH metrics AS (
+        SELECT m.id,m.category,m.measurement_type,COALESCE(m.unit,'') AS unit,m.value,
+               l.magnification,l.numerical_aperture
+        FROM metrology_measurement m JOIN metrology_current_run r ON r.id=m.run_id
+        JOIN metrology_lens l ON l.id=m.lens_id
+        WHERE l.numerical_aperture IS NOT NULL
+          AND lower(m.status) NOT IN ('ignore','ignored','error','failed','failure')
+          AND m.value NOT IN ('NaN'::float8,'Infinity'::float8,'-Infinity'::float8)
+    ), grouped AS (
+      SELECT min(id) AS measurement_id,category,measurement_type,unit,magnification,numerical_aperture,
+             count(*) AS samples,percentile_cont(0.5) WITHIN GROUP (ORDER BY value) AS median
+      FROM metrics GROUP BY category,measurement_type,unit,magnification,numerical_aperture
+    ), units AS (
+      SELECT category,measurement_type,magnification,numerical_aperture,count(*) AS unit_count
+      FROM grouped GROUP BY category,measurement_type,magnification,numerical_aperture
+    )
+    SELECT g.*,t.id AS threshold_id,t.expected_value,t.lower_bound,t.upper_bound,t.version,t.created_by,t.created_at
+    FROM grouped g JOIN units u USING(category,measurement_type,magnification,numerical_aperture)
+    LEFT JOIN LATERAL (SELECT * FROM metrology_threshold t WHERE t.category=g.category
+      AND t.measurement_type=g.measurement_type AND t.magnification=g.magnification
+      AND t.numerical_aperture=g.numerical_aperture AND t.lower_bound IS NOT NULL AND t.upper_bound IS NOT NULL
+      AND (t.unit=g.unit OR (t.unit IS NULL AND u.unit_count=1))
+      ORDER BY (t.unit IS NOT NULL) DESC,t.version DESC,t.id DESC LIMIT 1) t ON true
+    ORDER BY g.category,g.measurement_type,g.magnification,g.numerical_aperture,g.unit""")
+
+
+def save_threshold(measurement_id, actor_id, expected, lower, upper):
+    from django.db import transaction
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("""SELECT m.category,m.measurement_type,l.magnification,l.numerical_aperture,COALESCE(m.unit,'')
+                FROM metrology_measurement m JOIN metrology_current_run r ON r.id=m.run_id
+                JOIN metrology_lens l ON l.id=m.lens_id
+                WHERE m.id=%s AND l.numerical_aperture IS NOT NULL
+                AND lower(m.status) NOT IN ('ignore','ignored','error','failed','failure')""", [measurement_id])
+            key = cursor.fetchone()
+            if not key:
+                return False
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(concat_ws('|',%s,%s,%s,%s::text,%s),0))", key)
+            cursor.execute("""INSERT INTO metrology_threshold(category,measurement_type,magnification,numerical_aperture,unit,
+                expected_value,lower_bound,upper_bound,version,created_by)
+                SELECT %s,%s,%s,%s,%s,%s,%s,%s,COALESCE(max(version),0)+1,%s FROM metrology_threshold
+                WHERE category=%s AND measurement_type=%s AND magnification=%s AND numerical_aperture=%s AND unit=%s""",
+                [*key, expected, lower, upper, actor_id, *key])
+    return True
 
 
 def redo_requests(limit=100):
@@ -208,6 +274,6 @@ def failed_runs(page=1, page_size=50):
                           AND newer.state IN ('retryable_failure','permanent_failure') AND newer.id>r.id)
     """
     total = _rows("SELECT count(*) AS total " + base)[0]["total"]
-    rows = _rows("SELECT r.fileset_id,r.source,r.state,r.attempt_count,r.error_message,r.updated_at " + base +
+    rows = _rows("SELECT r.id,r.fileset_id,r.source,r.state,r.attempt_count,r.error_message,r.updated_at,r.source_image_ids, (SELECT q.state FROM metrology_redo_request q WHERE q.source=r.source AND q.fileset_id=r.fileset_id ORDER BY q.id DESC LIMIT 1) AS redo_state " + base +
                  " ORDER BY r.updated_at DESC,r.id DESC LIMIT %s OFFSET %s", [page_size, (page - 1) * page_size])
     return rows, total

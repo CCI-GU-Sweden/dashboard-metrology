@@ -76,6 +76,33 @@ class ViewerTests(SimpleTestCase):
         self.assertContains(views.redo_queue(self.request('/metrology/redo/', self.staff)), 'No REDO requests yet')
         self.assertEqual(views.redo_queue(self.request('/metrology/redo/', self.researcher)).status_code, 403)
 
+    @patch('dashboard_metrology.views.data.enqueue_failed_redo', return_value='queued')
+    def test_failed_redo_requires_admin_and_targets_run(self, enqueue):
+        request = self.factory.post('/metrology/review/5/redo/')
+        request.user = self.staff
+        self.assertEqual(views.redo_failed(request, 5).status_code, 403)
+        request.user = SimpleNamespace(is_authenticated=True, is_active=True, role='admin', id=42)
+        self.assertEqual(views.redo_failed(request, 5).status_code, 302)
+        enqueue.assert_called_once_with(5, 42)
+
+    @patch('dashboard_metrology.views.data.save_threshold', return_value=True)
+    def test_threshold_requires_admin_and_finite_ordered_bounds(self, save):
+        request = self.factory.post('/metrology/thresholds/2/', {'expected':'1', 'lower':'0.5', 'upper':'2'})
+        request.user = self.staff
+        self.assertEqual(views.threshold_save(request, 2).status_code, 403)
+        request.user = SimpleNamespace(is_authenticated=True, is_active=True, role='admin', id=42)
+        self.assertEqual(views.threshold_save(request, 2).status_code, 302)
+        save.assert_called_once_with(2, 42, 1.0, 0.5, 2.0)
+        for values in ({'expected':'NaN','lower':'0','upper':'2'}, {'expected':'3','lower':'0','upper':'2'}):
+            invalid = self.factory.post('/metrology/thresholds/2/', values)
+            invalid.user = request.user
+            self.assertEqual(views.threshold_save(invalid, 2).status_code, 400)
+
+    @patch('dashboard_metrology.views.data.threshold_options', return_value=[])
+    def test_threshold_page_staff_access(self, options):
+        self.assertContains(views.thresholds(self.request('/metrology/thresholds/', self.staff)), 'No calibrated measurements')
+        self.assertEqual(views.thresholds(self.request('/metrology/thresholds/', self.researcher)).status_code, 403)
+
     @patch("dashboard_metrology.views.data.figure_payload")
     def test_image_attachment_returns_safe_content_type_and_missing_is_404(self, payload):
         payload.return_value = {"payload": b"example", "mime_type": "image/png"}

@@ -12,8 +12,7 @@ from .data import _rows
 
 def measurements(microscope_id=None):
     # Unit is included in the baseline key so different units cannot be mixed.
-    # Explicit threshold rows have no unit field: use them only when the metric
-    # has a single unit for that lens type.
+    # Legacy thresholds have no unit: use them only for single-unit metrics.
     rows = _rows("""
         WITH base AS (
             SELECT m.id, m.microscope_id, m.lens_id, m.category, m.measurement_type,
@@ -44,8 +43,9 @@ def measurements(microscope_id=None):
                 SELECT id,expected_value,lower_bound,upper_bound FROM metrology_threshold t
                 WHERE t.magnification=b.magnification AND t.numerical_aperture=b.numerical_aperture
                   AND t.category=b.category AND t.measurement_type=b.measurement_type
-                  AND t.lower_bound IS NOT NULL AND t.upper_bound IS NOT NULL AND u.units=1
-                ORDER BY t.version DESC,t.id DESC LIMIT 1
+                  AND t.lower_bound IS NOT NULL AND t.upper_bound IS NOT NULL
+                  AND (t.unit=b.unit OR (t.unit IS NULL AND u.units=1))
+                ORDER BY (t.unit IS NOT NULL) DESC,t.version DESC,t.id DESC LIMIT 1
             ) t ON true
             WHERE s.samples>=3 OR t.id IS NOT NULL
         ), normalized AS (

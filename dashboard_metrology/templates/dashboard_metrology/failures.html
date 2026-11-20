@@ -6,8 +6,8 @@
   <p class="small-note">{{ total }} filesets. Failures disappear from this list after a successful run.</p>
   {% if failures %}
   <div class="table-container"><table class="table is-fullwidth">
-    <thead><tr><th>Fileset</th><th>Source</th><th>Last attempt</th><th>Status</th><th>Attempts</th><th>Reason</th></tr></thead>
-    <tbody>{% for failure in failures %}<tr><td>{{ failure.fileset_id }}</td><td>{{ failure.source }}</td><td>{{ failure.updated_at|date:'Y-m-d H:i' }}</td><td>{{ failure.state }}</td><td>{{ failure.attempt_count }}</td><td>{{ failure.error_message|default:'No details recorded' }}</td></tr>{% endfor %}</tbody>
+    <thead><tr><th>Fileset</th><th>OMERO images</th><th>Source</th><th>Last attempt</th><th>Status</th><th>Attempts</th><th>Reason</th>{% if can_redo %}<th>REDO</th>{% endif %}</tr></thead>
+    <tbody>{% for failure in failures %}<tr><td>{{ failure.fileset_id }}</td><td>{% for image in failure.omero_images %}{% if image.url %}<a href="{{ image.url }}" target="_blank" rel="noopener noreferrer">Image {{ image.id }}</a>{% else %}Image {{ image.id }}{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}Not recorded{% endfor %}</td><td>{{ failure.source }}</td><td>{{ failure.updated_at|date:'Y-m-d H:i' }}</td><td>{{ failure.state }}</td><td>{{ failure.attempt_count }}</td><td>{{ failure.error_message|default:'No details recorded' }}</td>{% if can_redo %}<td>{% if failure.redo_state == 'pending' or failure.redo_state == 'running' %}{{ failure.redo_state }}{% else %}<form method="post" action="{% url 'metrology_redo_failed' failure.id %}">{% csrf_token %}<button class="button is-small is-light" type="submit">Queue REDO</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody>
   </table></div>
   <nav class="buttons" aria-label="Review pages">{% if previous %}<a class="button" href="?page={{ previous }}">Previous</a>{% endif %}<span class="button is-static">Page {{ page }}</span>{% if next %}<a class="button" href="?page={{ next }}">Next</a>{% endif %}</nav>
   {% else %}<p>No filesets need attention on this page.</p>{% endif %}

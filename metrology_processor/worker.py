@@ -107,8 +107,8 @@ def run(limit):
         if not db.execute("SELECT pg_try_advisory_lock(%s)", (730625103,)).fetchone()[0]:
             LOG.info("Another metrology processor is running")
             return 0
-        if db.execute("SELECT max(version) FROM public.metrology_schema_version").fetchone()[0] != 5:
-            raise RuntimeError("Schema version 5 is required")
+        if db.execute("SELECT max(version) FROM public.metrology_schema_version").fetchone()[0] != 6:
+            raise RuntimeError("Schema version 6 is required")
         connection = connect()
         selected = failures = 0
         queued = {row[0] for row in db.execute("SELECT fileset_id FROM public.metrology_redo_request WHERE source=%s AND state IN ('pending','running')", (source,)).fetchall()}
@@ -122,6 +122,7 @@ def run(limit):
                 continue
             selected += 1
             try:
+                db.execute("UPDATE public.metrology_run SET source_image_ids=%s WHERE id=%s", (image_ids, run_id))
                 if not db.execute("SELECT EXISTS(SELECT 1 FROM public.metrology_artifact WHERE run_id=%s)", (run_id,)).fetchone()[0]:
                     override_rows = db.execute("SELECT image_id,category FROM public.metrology_analysis_override WHERE source=%s AND image_id = ANY(%s)", (source, image_ids)).fetchall()
                     outputs = analyze_fileset(connection, image_ids, dict(override_rows), max_bytes)

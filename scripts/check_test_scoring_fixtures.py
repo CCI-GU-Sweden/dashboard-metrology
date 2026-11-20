@@ -26,16 +26,18 @@ with transaction.atomic():
         cursor.execute("CREATE TEMP TABLE metrology_current_run (id bigint, state text, imported_at timestamptz) ON COMMIT DROP")
         cursor.execute("CREATE TEMP TABLE metrology_lens (id bigint, magnification text, numerical_aperture float8) ON COMMIT DROP")
         cursor.execute("CREATE TEMP TABLE metrology_measurement (id bigint,run_id bigint,microscope_id bigint,lens_id bigint,category text,measurement_type text,unit text,value float8,status text,acquired_at timestamptz) ON COMMIT DROP")
-        cursor.execute("CREATE TEMP TABLE metrology_threshold (id bigint, magnification text,numerical_aperture float8,category text,measurement_type text,expected_value float8,lower_bound float8,upper_bound float8,version int) ON COMMIT DROP")
+        cursor.execute("CREATE TEMP TABLE metrology_threshold (id bigint, magnification text,numerical_aperture float8,category text,measurement_type text,expected_value float8,lower_bound float8,upper_bound float8,version int,unit text) ON COMMIT DROP")
         cursor.execute("INSERT INTO metrology_current_run VALUES (1,'complete','2026-01-01T00:00:00Z')")
         cursor.execute("INSERT INTO metrology_lens VALUES (1,'40x',1.2)")
         cursor.execute("INSERT INTO metrology_measurement VALUES (1,1,1,1,'A','derived','um',90,'success',NULL),(2,1,1,1,'A','derived','um',100,'success',NULL),(3,1,1,1,'A','derived','um',110,'success',NULL),(4,1,1,1,'A','explicit','um',120,'success',NULL),(5,1,1,1,'A','insufficient','um',10,'success',NULL),(6,1,1,1,'A','derived','nm',500,'success',NULL)")
-        cursor.execute("INSERT INTO metrology_threshold VALUES (1,'40x',1.2,'A','explicit',100,90,110,1)")
+        cursor.execute("INSERT INTO metrology_threshold VALUES (1,'40x',1.2,'A','explicit',100,90,110,1,NULL)")
+        cursor.execute("INSERT INTO metrology_threshold VALUES (2,'40x',1.2,'A','derived',500,490,510,1,'nm')")
     rows = {row["id"]: row for row in s.measurements()}
-    assert set(rows) == {1,2,3,4}, set(rows)
+    assert set(rows) == {1,2,3,4,6}, set(rows)
     assert all(abs(rows[i]["score"] - 1.0) < 1e-10 for i in (1,2,3))
     assert abs(rows[4]["score"] - (2/3)**2) < 1e-10
     assert rows[4]["threshold_id"] == 1
+    assert rows[6]["threshold_id"] == 2 and rows[6]["score"] == 1.0
     print("Derived and explicit baselines, scoring, missing samples and unit isolation passed")
 '''
 result = subprocess.run(["oc", "-n", "core-omero-test", "exec", "-i", "deploy/dashboard-django", "--", "python", "-c", code], input=source.encode(), capture_output=True)
