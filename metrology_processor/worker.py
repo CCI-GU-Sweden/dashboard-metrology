@@ -78,6 +78,14 @@ def save_results(db, run_id, outputs):
                 na = positive_number(metadata, "Lens NA") if metadata.get("Lens NA") else None
                 lens_id = db.execute("INSERT INTO public.metrology_lens(microscope_id,magnification,numerical_aperture) VALUES(%s,%s,%s) ON CONFLICT ON CONSTRAINT metrology_lens_identity DO UPDATE SET magnification=EXCLUDED.magnification RETURNING id", (microscope_id, magnification, na)).fetchone()[0]
             for key, category, metric, value, unit, status in measurements:
+                # Preserve a deliberate ignore decision for the same source image/metric across REDO generations.
+                ignored = db.execute("""SELECT EXISTS(SELECT 1 FROM public.metrology_measurement m
+                    JOIN public.metrology_current_run old_run ON old_run.id=m.run_id
+                    JOIN public.metrology_run new_run ON new_run.id=%s
+                    WHERE old_run.source=new_run.source AND old_run.fileset_id=new_run.fileset_id
+                      AND old_run.state='complete' AND m.metric_key=%s AND lower(m.status) IN ('ignore','ignored'))""", (run_id, key)).fetchone()[0]
+                if ignored:
+                    status = 'ignored'
                 db.execute("INSERT INTO public.metrology_measurement(run_id,microscope_id,lens_id,metric_key,category,measurement_type,value,unit,status,acquired_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(run_id,metric_key) DO NOTHING", (run_id, microscope_id, lens_id, key, category, metric, value, unit, status, acquired_at(metadata)))
             for image_id, key, mimetype, payload in artifacts:
                 artifact_key = f"{image_id}-{key}"

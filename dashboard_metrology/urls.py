@@ -11,8 +11,11 @@ urlpatterns = [
     path("metrology/measurements/", views.measurements, name="metrology_measurements"),
     path("metrology/redo/", views.redo_queue, name="metrology_redo_queue"),
     path("metrology/measurements/<int:measurement_id>/redo/", views.redo, name="metrology_redo"),
+    path("metrology/measurements/<int:measurement_id>/ignore/", views.ignore_measurement, name="metrology_ignore"),
+    path("metrology/measurements/<int:measurement_id>/restore/", views.restore_measurement, name="metrology_restore"),
     path("metrology/attachments/<int:artifact_id>/", views.attachment, name="metrology_attachment"),
     path("metrology/microscopes/<int:microscope_id>/figures/", views.figures, name="metrology_figures"),
     path("metrology/microscopes/<int:microscope_id>/", views.microscope, name="metrology_microscope"),
     path("metrology/microscopes/<int:microscope_id>/history/", views.history, name="metrology_history"),
+    path("metrology/microscopes/<int:microscope_id>/score-details/", views.score_details, name="metrology_score_details"),
 ]

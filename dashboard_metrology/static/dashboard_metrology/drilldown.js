@@ -37,7 +37,57 @@
     const panel=document.getElementById('score-table'); panel.hidden=!panel.hidden;
     event.currentTarget.setAttribute('aria-expanded',String(!panel.hidden)); event.currentTarget.textContent=panel.hidden?'Show score table':'Hide score table';
   });
+  function filterScores() {
+    document.querySelectorAll('.metrology-score-row').forEach(row => { row.hidden=!!lensChoice.value && row.dataset.lens!==lensChoice.value; });
+    document.querySelectorAll('.score-detail-row').forEach(row=>row.remove());
+    document.querySelectorAll('.score-details-button').forEach(button=>button.setAttribute('aria-expanded','false'));
+  }
+  function actionForm(url, label, className, key) {
+    const token=document.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (!url || !token) return null;
+    const form=document.createElement('form'); form.method='post'; form.action=url; form.className=className;
+    if (key) form.dataset.fileset=key;
+    const input=document.createElement('input'); input.type='hidden'; input.name='csrfmiddlewaretoken'; input.value=token.value;
+    const button=document.createElement('button'); button.type='submit'; button.className='button is-small is-light'; button.textContent=label;
+    form.append(input,button); return form;
+  }
+  document.getElementById('score-table').addEventListener('click', async event => {
+    const button=event.target.closest('.score-details-button'); if (!button) return;
+    const parent=button.closest('tr');
+    const existing=parent.nextElementSibling;
+    if (existing && existing.classList.contains('score-detail-row')) { existing.remove(); button.setAttribute('aria-expanded','false'); return; }
+    const detail=document.createElement('tr'); detail.className='score-detail-row';
+    const cell=document.createElement('td'); cell.colSpan=7; cell.textContent='Loading details…'; detail.append(cell); parent.after(detail); button.setAttribute('aria-expanded','true');
+    try {
+      const url=new URL(root.dataset.scoreDetails,location.href);
+      url.searchParams.set('lens',button.dataset.lens); url.searchParams.set('category',button.dataset.category); url.searchParams.set('day',button.dataset.day);
+      const response=await fetch(url,{credentials:'same-origin'}); if (!response.ok) throw new Error();
+      const data=await response.json(); if (!detail.isConnected) return;
+      cell.replaceChildren();
+      if (!data.measurements.length) {cell.textContent='No measurements available for this score.'; return;}
+      const groups=new Map();
+      data.measurements.forEach(item=>{
+        const key=JSON.stringify([item.run_id,item.image_id,item.artifact_id]);
+        if (!groups.has(key)) groups.set(key,[]); groups.get(key).push(item);
+      });
+      groups.forEach(items=>{
+        const first=items[0], section=document.createElement('div'); section.className='box';
+        const title=document.createElement('p'); title.textContent=`Fileset ${first.fileset_id} · Image ${first.image_id || 'unknown'}`; section.append(title);
+        if (first.omero_url) {const link=document.createElement('a'); link.href=first.omero_url; link.target='_blank'; link.rel='noopener noreferrer'; link.textContent='Open in OMERO'; section.append(link);}
+        if (first.figure_url) {const link=document.createElement('a'), img=document.createElement('img'); link.href=first.figure_url; link.target='_blank'; link.rel='noopener noreferrer'; img.src=first.figure_url; img.alt=`${button.dataset.category} analysis figure`; img.loading='lazy'; img.style.maxWidth='min(100%, 700px)'; img.style.display='block'; link.append(img); section.append(link);}
+        else {const note=document.createElement('p'); note.textContent='No displayable figure for this result.'; section.append(note);}
+        items.forEach(item=>{const line=document.createElement('div'); line.className='metrology-controls'; const text=document.createElement('span'); text.textContent=`${item.measurement_type}: ${item.value} ${item.unit || ''} · ${item.status}`; line.append(text);
+          if (item.ignore_url && !['ignore','ignored'].includes(item.status.toLowerCase())) {const form=actionForm(item.ignore_url,'Ignore measurement','metrology-ignore-form'); if(form) line.append(form);}
+          section.append(line);
+        });
+        if (first.redo_url) {if (['pending','running'].includes(first.redo_state)) {const note=document.createElement('p'); note.textContent='REDO '+first.redo_state; section.append(note);}
+          else {const form=actionForm(first.redo_url,'Queue fileset REDO','metrology-redo-form',`${first.source}:${first.fileset_id}`); if(form) section.append(form);}}
+        cell.append(section);
+      });
+    } catch (_) {if(detail.isConnected) cell.textContent='Unable to load score details.';}
+  });
   function selectLens() {
+    filterScores();
     serial++; categoryDetail.hidden=true; const lens=lensChoice.value; lensDetail.hidden=!lens;
     categoryChoice.replaceChildren(new Option('Select a category',''));
     if (!lens) return;

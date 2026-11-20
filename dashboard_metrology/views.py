@@ -83,19 +83,15 @@ def microscope(request, microscope_id):
         lens_lookup = {lens["id"]: lens for lens in lens_list}
         scores = []
         for (mid, lens, day), value in objectives.items():
-            if lens_id is not None and lens != lens_id:
-                continue
             info_lens = lens_lookup.get(lens, {})
             scores.append({"level": "lens", "score_key": "Overall", "score": value,
                            "status": scoring.aggregate_status(value), "period_start": day,
-                           "magnification": info_lens.get("magnification"), "immersion": info_lens.get("immersion")})
+                           "lens_id": lens, "magnification": info_lens.get("magnification"), "immersion": info_lens.get("immersion")})
         for (mid, lens, category, day), value in categories.items():
-            if lens_id is not None and lens != lens_id:
-                continue
             info_lens = lens_lookup.get(lens, {})
             scores.append({"level": "category", "score_key": category, "score": value,
                            "status": scoring.aggregate_status(value), "period_start": day,
-                           "magnification": info_lens.get("magnification"), "immersion": info_lens.get("immersion")})
+                           "lens_id": lens, "magnification": info_lens.get("magnification"), "immersion": info_lens.get("immersion")})
         scores.sort(key=lambda row: row["period_start"], reverse=True)
         lens_history = [{"lens_id": lens, "day": str(day), "score": value}
                         for (_, lens, day), value in objectives.items()]
@@ -103,8 +99,9 @@ def microscope(request, microscope_id):
                             for (_, lens, category, day), value in categories.items()]
         return render(request, "dashboard_metrology/microscope.html", {
             "microscope": info, "lenses": lens_list, "lens_id": lens_id,
-            "measurements": measurements, "scores": scores[:50],
+            "measurements": measurements, "scores": scores,
             "lens_history": lens_history, "category_history": category_history,
+            "can_manage": is_dashboard_admin(request.user),
             "total": total, "page": page, "previous": page - 1 if page > 1 else None,
             "next": page + 1 if page * 50 < total else None,
         })
@@ -150,9 +147,67 @@ def redo(request, measurement_id):
         outcome = data.enqueue_redo(measurement_id, request.user.id)
         if outcome == 'not_found':
             return HttpResponseNotFound('Current measurement not found.')
+        if 'application/json' in request.headers.get('Accept', ''):
+            return JsonResponse({'status': outcome})
         return redirect('metrology_redo_queue')
     except DatabaseError:
         return HttpResponse('Metrology data is currently unavailable.', status=503)
+
+
+@require_POST
+def ignore_measurement(request, measurement_id):
+    if not is_dashboard_admin(request.user):
+        return HttpResponseForbidden('Administrator access required.')
+    try:
+        outcome = data.ignore_measurement(measurement_id, request.user.id)
+        if outcome == 'not_found':
+            return JsonResponse({'error': 'Current measurement not found.'}, status=404)
+        return JsonResponse({'status': outcome})
+    except DatabaseError:
+        return JsonResponse({'error': 'Metrology data is currently unavailable.'}, status=503)
+
+
+@require_POST
+def restore_measurement(request, measurement_id):
+    if not is_dashboard_admin(request.user):
+        return HttpResponseForbidden('Administrator access required.')
+    try:
+        outcome = data.restore_measurement(measurement_id, request.user.id)
+        if outcome == 'not_found':
+            return JsonResponse({'error': 'Current measurement not found.'}, status=404)
+        if outcome == 'no_previous_status':
+            return JsonResponse({'error': 'The previous status could not be recovered from the audit log.'}, status=409)
+        return JsonResponse({'status': outcome})
+    except DatabaseError:
+        return JsonResponse({'error': 'Metrology data is currently unavailable.'}, status=503)
+
+
+@require_GET
+def score_details(request, microscope_id):
+    if not operational_access(request.user):
+        return JsonResponse({'error': 'Staff access required.'}, status=403)
+    from datetime import date
+    lens = request.GET.get('lens', '')
+    category = request.GET.get('category', '')
+    try:
+        day = date.fromisoformat(request.GET.get('day', ''))
+    except ValueError:
+        return JsonResponse({'error': 'Invalid date.'}, status=400)
+    if not lens.isascii() or not lens.isdigit() or len(lens) > 18 or int(lens) < 1 or not category or len(category) > 200:
+        return JsonResponse({'error': 'Invalid selection.'}, status=400)
+    try:
+        if not data.microscope(microscope_id) or not any(item['id'] == int(lens) for item in data.lenses(microscope_id)):
+            return JsonResponse({'error': 'Not found.'}, status=404)
+        rows = data.score_details(microscope_id, int(lens), category, day)
+        for row in rows:
+            row['figure_url'] = reverse('metrology_attachment', args=[row['artifact_id']]) if row['artifact_id'] else ''
+            row['omero_url'] = _omero_image_url(row['source'], row['image_id'])
+            if is_dashboard_admin(request.user):
+                row['redo_url'] = reverse('metrology_redo', args=[row['id']])
+                row['ignore_url'] = reverse('metrology_ignore', args=[row['id']])
+        return JsonResponse({'measurements': rows})
+    except DatabaseError:
+        return JsonResponse({'error': 'Metrology data is currently unavailable.'}, status=503)
 
 
 @require_POST

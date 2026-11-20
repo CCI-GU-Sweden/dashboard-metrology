@@ -94,7 +94,7 @@ def latest_scores(microscope_id):
 
 def history(microscope_id, lens_id=None, limit=5000):
     params = [microscope_id]
-    condition = "m.microscope_id=%s AND r.state='complete'"
+    condition = "m.microscope_id=%s AND r.state='complete' AND lower(m.status) NOT IN ('ignore','ignored')"
     if lens_id is not None:
         condition += " AND m.lens_id=%s"
         params.append(lens_id)
@@ -110,6 +110,69 @@ def history(microscope_id, lens_id=None, limit=5000):
         LIMIT %s
     """, [*params, limit + 1])
     return list(reversed(rows[:limit])), len(rows) > limit
+
+
+def score_details(microscope_id, lens_id, category, day):
+    return _rows("""SELECT m.id,m.run_id,m.metric_key,m.measurement_type,m.value,m.unit,m.status,
+        COALESCE(m.acquired_at,r.imported_at) AS measured_at,r.fileset_id,r.source,
+        i.image_id,a.id AS artifact_id,
+        (SELECT q.state FROM metrology_redo_request q WHERE q.source=r.source AND q.fileset_id=r.fileset_id
+         ORDER BY q.id DESC LIMIT 1) AS redo_state
+        FROM metrology_measurement m JOIN metrology_current_run r ON r.id=m.run_id
+        LEFT JOIN LATERAL (SELECT image_id FROM metrology_run_input i WHERE i.run_id=r.id
+             AND m.metric_key LIKE i.image_id::text || ':%%' LIMIT 1) i ON true
+        LEFT JOIN LATERAL (SELECT id FROM metrology_artifact a WHERE a.run_id=r.id AND a.image_id=i.image_id
+             AND a.state='linked' AND a.payload IS NOT NULL
+             AND a.artifact_key IN (i.image_id::text || '-figure-' || split_part(m.metric_key,':',2) || '.png',
+                                    i.image_id::text || '-psf-' || split_part(m.metric_key,':',2) || '.gif')
+             AND a.mime_type IN ('image/png','image/jpeg','image/gif','image/webp')
+             ORDER BY CASE WHEN a.mime_type='image/png' THEN 0 ELSE 1 END,a.id LIMIT 1) a ON true
+        WHERE m.microscope_id=%s AND m.lens_id=%s AND m.category=%s
+          AND (COALESCE(m.acquired_at,r.imported_at) AT TIME ZONE 'UTC')::date=%s
+        ORDER BY measured_at,m.id""", [microscope_id, lens_id, category, day])
+
+
+def ignore_measurement(measurement_id, actor_id):
+    from django.db import transaction
+    import json
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("""SELECT m.status FROM metrology_measurement m
+                JOIN metrology_current_run r ON r.id=m.run_id WHERE m.id=%s FOR UPDATE OF m""", [measurement_id])
+            row = cursor.fetchone()
+            if not row:
+                return 'not_found'
+            if row[0].lower() in ('ignore', 'ignored'):
+                return 'already_ignored'
+            cursor.execute("UPDATE metrology_measurement SET status='ignored' WHERE id=%s", [measurement_id])
+            cursor.execute("INSERT INTO metrology_action(measurement_id,action,actor_user_id,details) VALUES(%s,'ignore',%s,%s::jsonb)",
+                           [measurement_id, actor_id, json.dumps({'previous_status': row[0]})])
+    return 'ignored'
+
+
+def restore_measurement(measurement_id, actor_id):
+    from django.db import transaction
+    import json
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("""SELECT m.status,m.metric_key,r.source,r.fileset_id FROM metrology_measurement m
+                JOIN metrology_current_run r ON r.id=m.run_id WHERE m.id=%s FOR UPDATE OF m""", [measurement_id])
+            row = cursor.fetchone()
+            if not row:
+                return 'not_found'
+            if row[0].lower() not in ('ignore', 'ignored'):
+                return 'already_active'
+            cursor.execute("""SELECT a.details->>'previous_status' FROM metrology_action a
+                JOIN metrology_measurement old ON old.id=a.measurement_id JOIN metrology_run r ON r.id=old.run_id
+                WHERE a.action='ignore' AND old.metric_key=%s AND r.source=%s AND r.fileset_id=%s
+                ORDER BY a.id DESC LIMIT 1""", [row[1], row[2], row[3]])
+            previous = cursor.fetchone()
+            if not previous or not previous[0] or previous[0].lower() in ('ignore', 'ignored'):
+                return 'no_previous_status'
+            cursor.execute("UPDATE metrology_measurement SET status=%s WHERE id=%s", [previous[0], measurement_id])
+            cursor.execute("INSERT INTO metrology_action(measurement_id,action,actor_user_id,details) VALUES(%s,'restore',%s,%s::jsonb)",
+                           [measurement_id, actor_id, json.dumps({'restored_status': previous[0]})])
+    return 'restored'
 
 
 def all_measurements(filters, page=1, page_size=50):

@@ -71,6 +71,45 @@ class ViewerTests(SimpleTestCase):
         enqueue.return_value = 'not_found'
         self.assertEqual(views.redo(request, 99).status_code, 404)
 
+    @patch('dashboard_metrology.views.data.enqueue_redo', return_value='already_queued')
+    def test_redo_json_stays_on_page(self, enqueue):
+        request = self.factory.post('/metrology/measurements/4/redo/', HTTP_ACCEPT='application/json')
+        request.user = SimpleNamespace(is_authenticated=True, is_active=True, role='admin', id=42)
+        response = views.redo(request, 4)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content)['status'], 'already_queued')
+
+    @patch('dashboard_metrology.views.data.ignore_measurement', return_value='ignored')
+    def test_ignore_requires_admin_and_post(self, ignore):
+        self.assertEqual(views.ignore_measurement(self.request('/metrology/measurements/4/ignore/', self.admin), 4).status_code, 405)
+        request = self.factory.post('/metrology/measurements/4/ignore/')
+        request.user = self.staff
+        self.assertEqual(views.ignore_measurement(request, 4).status_code, 403)
+        request.user = SimpleNamespace(is_authenticated=True, is_active=True, role='admin', id=42)
+        self.assertEqual(json.loads(views.ignore_measurement(request, 4).content)['status'], 'ignored')
+        ignore.assert_called_once_with(4, 42)
+
+    @patch('dashboard_metrology.views.data.restore_measurement', return_value='restored')
+    def test_restore_requires_admin(self, restore):
+        request = self.factory.post('/metrology/measurements/4/restore/')
+        request.user = self.staff
+        self.assertEqual(views.restore_measurement(request, 4).status_code, 403)
+        request.user = SimpleNamespace(is_authenticated=True, is_active=True, role='admin', id=42)
+        self.assertEqual(json.loads(views.restore_measurement(request, 4).content)['status'], 'restored')
+        restore.assert_called_once_with(4, 42)
+
+    @patch('dashboard_metrology.views.data.score_details', return_value=[{'id': 5, 'artifact_id': 12, 'source': 'test', 'image_id': 567}])
+    @patch('dashboard_metrology.views.data.lenses', return_value=[{'id': 2}])
+    @patch('dashboard_metrology.views.data.microscope', return_value={'id': 1})
+    def test_score_details_validate_and_restrict_actions(self, microscope, lenses, details):
+        url='/metrology/microscopes/1/score-details/?lens=2&category=PSF&day=2026-01-01'
+        response=views.score_details(self.request(url, self.staff), 1)
+        result=json.loads(response.content)['measurements'][0]
+        self.assertEqual(result['figure_url'], '/metrology/attachments/12/')
+        self.assertNotIn('ignore_url', result)
+        self.assertEqual(views.score_details(self.request(url, self.researcher), 1).status_code, 403)
+        self.assertEqual(views.score_details(self.request('/?lens=2&category=PSF&day=wrong', self.staff), 1).status_code, 400)
+
     @patch('dashboard_metrology.views.data.redo_requests', return_value=[])
     def test_redo_queue_staff_access(self, requests):
         self.assertContains(views.redo_queue(self.request('/metrology/redo/', self.staff)), 'No REDO requests yet')
