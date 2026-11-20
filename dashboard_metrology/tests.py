@@ -6,9 +6,10 @@ from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.urls import reverse
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from . import views, scoring
+from .overdue import is_overdue
 from .dashboard_module import module, overview_metrics
 
 
@@ -33,7 +34,7 @@ class ViewerTests(SimpleTestCase):
         self.assertTrue(module.can_view(self.admin))
         self.assertFalse(module.can_view(self.researcher))
         self.assertFalse(module.can_view(self.anonymous))
-        with patch("dashboard_metrology.dashboard_module.summary", return_value={"microscopes": 2, "measurements": 5, "failures": 1}):
+        with patch("dashboard_metrology.dashboard_module.summary", return_value={"microscopes": 2, "measurements": 5, "failures": 1}), patch("dashboard_metrology.dashboard_module.microscopes", return_value=[]):
             self.assertEqual(overview_metrics(self.staff)[1]["value"], "5")
 
     @patch("dashboard_metrology.views.data.microscopes")
@@ -48,6 +49,17 @@ class ViewerTests(SimpleTestCase):
         self.assertContains(response, "80%")
         self.assertContains(response, "LSM980.png")
         self.assertContains(response, 'id="metrology-score-history"', html=False)
+
+    @patch('dashboard_metrology.views.data.microscopes')
+    @patch('dashboard_metrology.views.data.summary', return_value={'microscopes': 1, 'measurements': 1, 'failures': 0})
+    def test_overdue_badge_is_in_addition_to_score(self, summary, microscopes):
+        now = datetime(2026, 5, 15, 12, tzinfo=timezone.utc)
+        microscopes.return_value = [{'id': 1, 'name': 'Test', 'lens_count': 1, 'measurement_count': 1,
+                                   'last_measurement': now - timedelta(days=50)}]
+        with patch('dashboard_metrology.overdue.timezone.now', return_value=now):
+            response = views.home(self.request('/metrology/', self.staff))
+        self.assertContains(response, 'Overdue')
+        self.assertContains(response, 'Not scored yet')
 
     def test_direct_views_deny_non_staff(self):
         for user in (self.researcher, self.anonymous, SimpleNamespace(is_authenticated=True, is_active=False, role="staff")):
@@ -258,3 +270,21 @@ class ScoreAggregationTests(SimpleTestCase):
         self.assertEqual(scoring.aggregate_status(0.7), "success")
         self.assertEqual(scoring.aggregate_status(0.4), "warning")
         self.assertEqual(scoring.aggregate_status(0.39), "critical")
+
+
+class OverdueTests(SimpleTestCase):
+    def test_calendar_month_boundary_and_missing(self):
+        now = datetime(2026, 3, 31, 12, tzinfo=timezone.utc)
+        cutoff = datetime(2026, 2, 28, 13, tzinfo=timezone.utc)
+        self.assertTrue(is_overdue(cutoff - timedelta(seconds=1), now))
+        self.assertFalse(is_overdue(cutoff, now))
+        self.assertFalse(is_overdue(None, now))
+
+    @patch('dashboard_metrology.dashboard_module.microscopes')
+    @patch('dashboard_metrology.dashboard_module.summary', return_value={'microscopes': 3, 'measurements': 5, 'failures': 0})
+    def test_overview_counts_only_overdue_microscopes(self, summary, microscopes):
+        now = datetime(2026, 5, 15, 12, tzinfo=timezone.utc)
+        microscopes.return_value = [{'last_measurement': now - timedelta(days=50)}, {'last_measurement': now}, {'last_measurement': None}]
+        with patch('dashboard_metrology.overdue.timezone.now', return_value=now):
+            values = {item['label']: item['value'] for item in overview_metrics(None)}
+        self.assertEqual(values['Overdue microscopes'], '1')

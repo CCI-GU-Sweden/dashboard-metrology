@@ -10,6 +10,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from accounts.permissions import operational_access, is_dashboard_admin
 from . import data, scoring
+from .overdue import is_overdue
 
 
 def _image_for_microscope(name):
@@ -44,6 +45,7 @@ def home(request):
         for item in microscopes:
             item["image"] = _image_for_microscope(item["name"])
             item["latest_score"] = latest.get(item["id"])
+            item["overdue"] = is_overdue(item.get("last_measurement"))
         _, _, scores = scoring.aggregate(rows)
         score_history = [{"microscope_id": microscope, "day": str(day), "score": score}
                          for (microscope, day), score in sorted(scores.items())]

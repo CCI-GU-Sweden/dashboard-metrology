@@ -26,7 +26,8 @@ def microscopes():
     return _rows("""
         SELECT m.id, m.name, m.location, count(DISTINCT l.id) AS lens_count,
                count(DISTINCT measurement.id) AS measurement_count,
-               max(COALESCE(measurement.acquired_at, r.imported_at)) AS last_measurement
+               max(COALESCE(measurement.acquired_at, r.imported_at))
+                 FILTER (WHERE lower(measurement.status) NOT IN ('ignore','ignored')) AS last_measurement
         FROM metrology_microscope m
         LEFT JOIN metrology_lens l ON l.microscope_id=m.id
         LEFT JOIN metrology_measurement measurement ON measurement.microscope_id=m.id

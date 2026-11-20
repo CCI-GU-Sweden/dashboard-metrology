@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load static %}
+{% extends 'base.html' %}{% load static tz %}
 {% block content %}
 <section class="dashboard-content metrology-page">
   <a class="button is-light" href="{% url 'home' %}">← Overview</a>
@@ -9,8 +9,10 @@
     <a class="metrology-card" href="{% url 'metrology_microscope' microscope.id %}">
       <img src="{% static 'dashboard_metrology/images/' %}{{ microscope.image }}" alt="" loading="lazy">
       <div class="metrology-card-body"><h2>{{ microscope.name }}</h2><p>{{ microscope.lens_count }} lenses · {{ microscope.measurement_count }} measurements</p>
-        {% if microscope.latest_score %}<span class="metrology-badge metrology-{{ microscope.latest_score.status }}">{% widthratio microscope.latest_score.score 1 100 %}% · {{ microscope.latest_score.status }}</span><p>Latest: {{ microscope.latest_score.day|date:'Y-m-d' }}</p>
-        {% else %}<span class="metrology-badge metrology-unscored">Not scored yet</span>{% endif %}</div>
+        {% if microscope.latest_score %}<span class="metrology-badge metrology-{{ microscope.latest_score.status }}">{% widthratio microscope.latest_score.score 1 100 %}% · {{ microscope.latest_score.status }}</span>
+        {% else %}<span class="metrology-badge metrology-unscored">Not scored yet</span>{% endif %}
+        {% if microscope.overdue %}<span class="metrology-badge metrology-overdue">Overdue</span>{% endif %}
+        {% if microscope.last_measurement %}{% timezone 'Europe/Stockholm' %}<p>Last measurement: {{ microscope.last_measurement|date:'Y-m-d' }}</p>{% endtimezone %}{% endif %}</div>
     </a>
     {% empty %}<p>No microscope measurements are available yet.</p>{% endfor %}
   </div>

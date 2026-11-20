@@ -8,6 +8,7 @@
 .metrology-card-body p{font-size:.82rem;color:#64748b;margin:.3rem 0}
 .metrology-badge{display:inline-block;border-radius:999px;padding:.2rem .6rem;font-size:.8rem;font-weight:700}
 .metrology-success{background:#d9f3e7;color:#147349}.metrology-warning{background:#fff1d0;color:#885900}.metrology-critical{background:#ffe2e2;color:#9b2929}.metrology-unscored{background:#e9eef3;color:#506071}
+.metrology-overdue{background:#f2e4ff;color:#6f328d}
 .metrology-score-panel{margin-top:1.5rem}
 [data-theme=dark] .metrology-card{background:#202d3b;border-color:#39485d}[data-theme=dark] .metrology-card-body p{color:#b5c1cf}
 @media(max-width:600px){.metrology-heading{align-items:flex-start;flex-direction:column}}
